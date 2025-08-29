@@ -1,9 +1,40 @@
 #!/bin/bash
 
-# Check if zig is available
+# Try to find zig in various locations
+ZIG_CMD="zig"
+
+# Check if zig is available in PATH
 if ! command -v zig &> /dev/null; then
-    echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
-    exit 1
+    # If not in PATH, try to find it in the nuget packages
+    NUGET_HOME="${HOME}/.nuget/packages"
+    
+    # Try to find zig toolset for current platform
+    HOST_ARCH=$(uname -m)
+    if [[ "$HOST_ARCH" == "x86_64" ]]; then
+        HOST_ARCH="x64"
+    fi
+    
+    HOST_OS=$(uname -s)
+    if [[ "$HOST_OS" == "Linux" ]]; then
+        HOST_RID="linux-${HOST_ARCH}"
+    elif [[ "$HOST_OS" == "Darwin" ]]; then
+        HOST_RID="osx-${HOST_ARCH}"
+    else
+        HOST_RID=""
+    fi
+    
+    if [[ -n "$HOST_RID" ]]; then
+        ZIG_TOOLSET_PATH=$(find "$NUGET_HOME" -path "*/vezel.zig.toolsets.${HOST_RID}/*/tools/zig" -executable 2>/dev/null | head -1)
+        if [[ -n "$ZIG_TOOLSET_PATH" && -x "$ZIG_TOOLSET_PATH" ]]; then
+            ZIG_CMD="$ZIG_TOOLSET_PATH"
+        fi
+    fi
+    
+    # Final check - if still no zig found, report error
+    if [[ "$ZIG_CMD" == "zig" ]]; then
+        echo "Error: zig is not on the PATH and could not find zig toolset. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
+        exit 1
+    fi
 fi
 
 # Get all arguments
@@ -115,12 +146,17 @@ if [ "$is_windows_target" = true ] && [ -n "$response_file" ] && [ -f "$response
     args=$(echo "$args" | sed "s|@$response_file|@$temp_response_file|g")
     
     # Add flags for MinGW compatibility - only on Linux hosts where this flag is supported
-    if [[ "$(uname)" == "Linux" ]]; then
-        args="$args -Wl,--allow-multiple-definition"
-    fi
+    # Note: This flag should only be added for certain scenarios where it's actually needed
+    # For now, commenting out as it's causing issues with Windows targets
+    # if [[ "$(uname)" == "Linux" ]]; then
+    #     args="$args -Wl,--allow-multiple-definition"
+    # fi
+    
+    # Add library search path for MinGW stub libraries
+    args="$args -L/tmp/mingw-stubs"
     
     # Run zig cc with modified response file
-    zig cc $args
+    "$ZIG_CMD" cc $args
     
     # Clean up
     rm -f "$temp_response_file"
@@ -135,7 +171,7 @@ elif [ "$is_windows_target" = true ]; then
     args="${args//user32\.lib/-luser32}"
     
     # Run zig cc
-    zig cc $args
+    "$ZIG_CMD" cc $args
 else
     # Linux-specific workarounds (existing code)
     # Works around zlib not being available with zig. This is not great.
@@ -154,5 +190,5 @@ else
     args="-Wl,-u,__Module $args"
     
     # Run zig cc
-    zig cc $args
+    "$ZIG_CMD" cc $args
 fi
