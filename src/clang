@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Check if zig is available
+if ! command -v zig &> /dev/null; then
+    echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
+    exit 1
+fi
+
+# Get all arguments
+args="$@"
+
+# Works around zlib not being available with zig. This is not great.
+args="${args//-lz /}"
+
+# Work around a .NET 8 Preview 6 issue
+args="${args//\'-Wl,-rpath,\$ORIGIN\'/-Wl,-rpath,\$ORIGIN}"
+
+# Work around parameters unsupported by zig. Just drop them from the command line.
+args="${args//--discard-all/--as-needed}"
+args="${args//-Wl,-pie /}"
+args="${args//-pie /}"
+args="${args//-Wl,-e0x0 /}"
+
+# Works around zig linker dropping necessary parts of the executable.
+args="-Wl,-u,__Module $args"
+
+# Run zig cc
+zig cc $args
