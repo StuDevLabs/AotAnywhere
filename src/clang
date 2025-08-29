@@ -114,13 +114,10 @@ if [ "$is_windows_target" = true ] && [ -n "$response_file" ] && [ -f "$response
     # Update args to use the modified response file
     args=$(echo "$args" | sed "s|@$response_file|@$temp_response_file|g")
     
-    # Add flags to avoid automatic library linking issues
-    args="$args -nostdlib -lc"
+    # Add flags for MinGW compatibility and ignore missing MSVC libraries
+    args="$args -Wl,--allow-multiple-definition"
     
     # Run zig cc with modified response file
-    echo "=== Modified response file contents ===" >&2
-    cat "$temp_response_file" >&2
-    echo "=== End of response file ===" >&2
     zig cc $args
     
     # Clean up

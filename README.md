@@ -26,9 +26,9 @@ By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](http
     * `dotnet publish -r linux-arm64`
     * `dotnet publish -r linux-musl-x64`
     * `dotnet publish -r linux-musl-arm64`
-    * `dotnet publish -r win-x64` (from macOS/Linux hosts)
-    * `dotnet publish -r win-x86` (from macOS/Linux hosts)
-    * `dotnet publish -r win-arm64` (from macOS/Linux hosts)
+    * `dotnet publish -r win-x64` (from macOS/Linux hosts) - **Experimental**
+    * `dotnet publish -r win-x86` (from macOS/Linux hosts) - **Experimental**
+    * `dotnet publish -r win-arm64` (from macOS/Linux hosts) - **Experimental**
     * `dotnet publish -r linux-musl-arm64`
 
     If you skipped the second optional step to download llvm-objcopy, you must also pass `/p:StripSymbols=false` to the publish command, or you'll see an error instructing you to do that.
@@ -75,3 +75,5 @@ When targeting Windows from macOS/Linux hosts, this package uses the GNU ABI (Mi
 - Generated executables will depend on the MinGW runtime rather than the MSVC runtime
 - For maximum compatibility, you may want to link statically or bundle the required MinGW runtime libraries
 - Some Windows-specific .NET features that rely on MSVC-specific behavior may not work identically
+
+**Current Status**: Windows cross-compilation support is experimental. While the build infrastructure is in place and most of the compilation pipeline works, there are currently some compatibility issues between the .NET Native AOT runtime libraries (which expect MSVC libraries) and the MinGW environment provided by Zig. The feature may require additional compatibility work or alternative runtime library builds to function fully.
