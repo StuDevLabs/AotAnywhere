@@ -1,11 +1,5 @@
 #!/bin/bash
 
-# Check if zig is available
-if ! command -v zig &> /dev/null; then
-    echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
-    exit 1
-fi
-
 # Get all arguments
 args="$@"
 
@@ -28,6 +22,12 @@ if [ "$is_macos_target" = true ] && [ "$is_macos_host" = false ]; then
 fi
 
 if [ "$is_cross_compiling_to_macos" = true ]; then
+    # Check if zig is available for cross-compilation
+    if ! command -v zig &> /dev/null; then
+        echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
+        exit 1
+    fi
+    
     # macOS cross-compilation argument handling
     echo "Cross-compiling to macOS target using PublishAotCross..."
     
@@ -52,9 +52,35 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
 elif [ "$is_macos_target" = true ]; then
     # Native macOS compilation - use system clang instead of zig
     echo "Native macOS compilation, using system clang..."
-    exec clang "$@"
+    
+    # Find the actual system clang (not our wrapper) by temporarily removing our directory from PATH
+    ORIGINAL_PATH="$PATH"
+    # Remove the directory containing this script from PATH
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PATH="${PATH//:$SCRIPT_DIR:/:}"
+    PATH="${PATH/#$SCRIPT_DIR:/}"
+    PATH="${PATH/%:$SCRIPT_DIR/}"
+    
+    # Find system clang
+    SYSTEM_CLANG=$(command -v clang)
+    
+    # Restore original PATH
+    PATH="$ORIGINAL_PATH"
+    
+    if [ -n "$SYSTEM_CLANG" ] && [ "$SYSTEM_CLANG" != "$SCRIPT_DIR/clang" ]; then
+        exec "$SYSTEM_CLANG" "$@"
+    else
+        echo "Error: Could not find system clang for native macOS compilation"
+        exit 1
+    fi
     
 else
+    # Check if zig is available for Linux compilation
+    if ! command -v zig &> /dev/null; then
+        echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
+        exit 1
+    fi
+    
     # Linux-specific argument handling (existing logic)
     
     # Works around zlib not being available with zig. This is not great.
@@ -73,5 +99,12 @@ else
     args="-Wl,-u,__Module $args"
 fi
 
-# Run zig cc (only for cross-compilation scenarios)
-zig cc $args
+# Run zig cc (only for cross-compilation scenarios and Linux targets)
+if [ "$is_macos_target" = true ] && [ "$is_macos_host" = true ]; then
+    # Native macOS compilation was already handled with exec above
+    echo "Error: Native macOS compilation should have been handled above"
+    exit 1
+else
+    # Use zig cc for cross-compilation or Linux targets
+    zig cc $args
+fi
