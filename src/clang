@@ -50,8 +50,9 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
     args="${args//-framework Security /}"
     
 elif [ "$is_macos_target" = true ]; then
-    # Native macOS compilation - pass through all arguments unchanged
-    echo "Native macOS compilation, passing through all arguments..."
+    # Native macOS compilation - use system clang instead of zig
+    echo "Native macOS compilation, using system clang..."
+    exec clang "$@"
     
 else
     # Linux-specific argument handling (existing logic)
@@ -72,5 +73,5 @@ else
     args="-Wl,-u,__Module $args"
 fi
 
-# Run zig cc
+# Run zig cc (only for cross-compilation scenarios)
 zig cc $args
