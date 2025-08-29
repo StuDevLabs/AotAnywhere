@@ -52,6 +52,11 @@
       <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-arm64'))">$(PkgVezel_Zig_Toolsets_win-arm64)/tools</ZigPath>
     </PropertyGroup>
 
+    <PropertyGroup Condition="$(HostRuntimeIdentifier.StartsWith('osx-'))">
+      <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-x64'))">$(PkgVezel_Zig_Toolsets_osx-x64)/tools</ZigPath>
+      <ZigPath Condition="$(HostRuntimeIdentifier.EndsWith('-arm64'))">$(PkgVezel_Zig_Toolsets_osx-arm64)/tools</ZigPath>
+    </PropertyGroup>
+
     <PrependPath Condition="'$(UseExternalZig)' == 'false'" Value="$(ZigPath)" />
 
   </Target>
