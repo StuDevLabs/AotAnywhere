@@ -13,41 +13,45 @@ echo %args% | findstr /C:"-apple-darwin" /C:"-framework" /C:"-exported_symbols_l
 if not errorlevel 1 (
     rem We're on Windows (not macOS) and targeting macOS, so this is cross-compilation
     echo Cross-compiling to macOS target using PublishAotCross...
+    echo DEBUG: Original args: %args%
     
     rem Handle macOS-specific flags that zig doesn't support
-    rem Remove -ld_classic flag which is macOS-specific
-    set "args=%args:-ld_classic =%"
-    set "args=%args: -ld_classic=%"
+    rem Remove -ld_classic flag which is macOS-specific (comprehensive removal)
+    set "args= %args% "
+    set "args=%args: -ld_classic = %"
+    call :trim_args args
+    
+    echo DEBUG: After removing -ld_classic: %args%
     
     rem Remove problematic libraries that may not be available during cross-compilation
-    set "args=%args:-lswiftCore =%"
-    set "args=%args: -lswiftCore=%"
-    set "args=%args:-lswiftFoundation =%"
-    set "args=%args: -lswiftFoundation=%"
-    set "args=%args:-licucore =%"
-    set "args=%args: -licucore=%"
-    set "args=%args:-L/usr/lib/swift =%"
-    set "args=%args: -L/usr/lib/swift=%"
-    set "args=%args:-lobjc =%"
-    set "args=%args: -lobjc=%"
-    set "args=%args:-lz =%"
-    set "args=%args: -lz=%"
-    set "args=%args:-ldl =%"
-    set "args=%args: -ldl=%"
-    set "args=%args:-lm =%"
-    set "args=%args: -lm=%"
+    rem Use the same comprehensive space-based approach for all removals
+    set "args= %args% "
+    
+    set "args=%args: -lswiftCore = %"
+    set "args=%args: -lswiftFoundation = %"
+    set "args=%args: -licucore = %"
+    set "args=%args: -L/usr/lib/swift = %"
+    set "args=%args: -lobjc = %"
+    set "args=%args: -lz = %"
+    set "args=%args: -ldl = %"
+    set "args=%args: -lm = %"
+    
+    call :trim_args args
+    
+    echo DEBUG: After removing libraries: %args%
     
     rem Remove frameworks that may cause issues in cross-compilation
-    set "args=%args:-framework CryptoKit =%"
-    set "args=%args: -framework CryptoKit=%"
-    set "args=%args:-framework GSS =%"
-    set "args=%args: -framework GSS=%"
-    set "args=%args:-framework CoreFoundation =%"
-    set "args=%args: -framework CoreFoundation=%"
-    set "args=%args:-framework Foundation =%"
-    set "args=%args: -framework Foundation=%"
-    set "args=%args:-framework Security =%"
-    set "args=%args: -framework Security=%"
+    set "args= %args% "
+    
+    set "args=%args: -framework CryptoKit = %"
+    set "args=%args: -framework GSS = %"
+    set "args=%args: -framework CoreFoundation = %"
+    set "args=%args: -framework Foundation = %"
+    set "args=%args: -framework Security = %"
+    
+    call :trim_args args
+    
+    echo DEBUG: After removing frameworks: %args%
     
     rem Note: Cross-compilation to macOS has inherent limitations
     echo Warning: Cross-compilation removes system libraries/frameworks that may be required at runtime
@@ -96,6 +100,7 @@ if not errorlevel 1 (
 )
 
 rem Run zig cc
+echo DEBUG: Final command: zig cc %args%
 zig cc %args%
 exit /B %ERRORLEVEL%
 
