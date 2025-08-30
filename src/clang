@@ -104,9 +104,24 @@ else
 
     # Work around parameters unsupported by zig. Just drop them from the command line.
     args="${args//--discard-all/--as-needed}"
+    
+    # Remove -Wl,-pie flags (all variations)
+    args="${args// -Wl,-pie / }"
     args="${args//-Wl,-pie /}"
+    args="${args// -Wl,-pie/}"
+    args="${args//-Wl,-pie/}"
+    
+    # Remove -pie flags (all variations)
+    args="${args// -pie / }"
     args="${args//-pie /}"
+    args="${args// -pie/}"
+    args="${args//-pie/}"
+    
+    # Remove other unsupported flags
+    args="${args// -Wl,-e0x0 / }"
     args="${args//-Wl,-e0x0 /}"
+    args="${args// -Wl,-e0x0/}"
+    args="${args//-Wl,-e0x0/}"
 
     # Works around zig linker dropping necessary parts of the executable.
     args="-Wl,-u,__Module $args"

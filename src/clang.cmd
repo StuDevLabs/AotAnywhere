@@ -64,12 +64,24 @@ if not errorlevel 1 (
 
     rem Work around parameters unsupported by zig. Just drop them from the command line.
     set "args=%args:--discard-all=--as-needed%"
+    
+    rem Remove -Wl,-pie flags first (longer patterns before shorter ones to avoid partial matches)
+    set "args=%args: -Wl,-pie =%"
     set "args=%args:-Wl,-pie =%"
     set "args=%args: -Wl,-pie=%"
+    set "args=%args:-Wl,-pie=%"
+    
+    rem Remove -pie flags (all possible positions)
+    set "args=%args: -pie =%"
     set "args=%args:-pie =%"
     set "args=%args: -pie=%"
+    set "args=%args:-pie=%"
+    
+    rem Remove other unsupported flags
+    set "args=%args: -Wl,-e0x0 =%"
     set "args=%args:-Wl,-e0x0 =%"
     set "args=%args: -Wl,-e0x0=%"
+    set "args=%args:-Wl,-e0x0=%"
 
     rem Works around zig linker dropping necessary parts of the executable.
     set "args=-Wl,-u,__Module %args%"
