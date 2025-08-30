@@ -54,6 +54,7 @@ if not errorlevel 1 (
     
 ) else (
     rem Linux-specific argument handling (existing logic)
+    echo Cross-compiling to Linux target using PublishAotCross...
     
     rem Works around zlib not being available with zig. This is not great.
     set "args=%args:-lz =%"
@@ -65,8 +66,24 @@ if not errorlevel 1 (
     rem Work around parameters unsupported by zig. Just drop them from the command line.
     set "args=%args:--discard-all=--as-needed%"
     
-    rem Remove -pie and -Wl,-pie flags precisely using iterative approach
-    call :filter_pie_flags args
+    rem Remove -pie and -Wl,-pie flags using comprehensive string replacement
+    rem First add spaces to ensure proper boundary detection
+    set "args= %args% "
+    
+    rem Remove various forms of -pie flags
+    set "args=%args: -pie = %"
+    set "args=%args: -Wl,-pie = %"
+    
+    rem Handle edge cases where -pie might be at the start or end
+    if "%args:~0,5%"=="-pie " set "args=%args:~5%"
+    if "%args:~0,9%"=="-Wl,-pie " set "args=%args:~9%"
+    
+    rem Remove trailing -pie
+    if "%args:~-5%"==" -pie" set "args=%args:~0,-5%"
+    if "%args:~-9%"==" -Wl,-pie" set "args=%args:~0,-9%"
+    
+    rem Clean up extra spaces
+    call :trim_args args
     
     rem Remove other unsupported flags
     set "args=%args: -Wl,-e0x0 =%"
@@ -82,27 +99,30 @@ rem Run zig cc
 zig cc %args%
 exit /B %ERRORLEVEL%
 
-:filter_pie_flags
-rem Helper function to filter out -pie and -Wl,-pie flags precisely
-rem Usage: call :filter_pie_flags variable_name
+:trim_args
+rem Helper function to trim spaces from arguments and normalize spacing
+rem Usage: call :trim_args variable_name
 setlocal enabledelayedexpansion
 set "var_name=%~1"
 call set "input_args=%%%~1%%"
-set "output_args="
 
-rem Split args and filter
-for %%a in (%input_args%) do (
-    set "current_arg=%%a"
-    if not "!current_arg!"=="-pie" (
-        if not "!current_arg!"=="-Wl,-pie" (
-            if defined output_args (
-                set "output_args=!output_args! !current_arg!"
-            ) else (
-                set "output_args=!current_arg!"
-            )
-        )
-    )
+rem Remove leading spaces
+for /f "tokens=* delims= " %%a in ("!input_args!") do set "input_args=%%a"
+
+rem Remove trailing spaces
+:trim_end
+if "!input_args:~-1!"==" " (
+    set "input_args=!input_args:~0,-1!"
+    goto trim_end
 )
 
-endlocal & set "%var_name%=%output_args%"
+rem Replace multiple spaces with single space
+:normalize_spaces
+set "temp_args=!input_args:  = !"
+if not "!temp_args!"=="!input_args!" (
+    set "input_args=!temp_args!"
+    goto normalize_spaces
+)
+
+endlocal & set "%var_name%=%input_args%"
 goto :EOF
