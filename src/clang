@@ -63,22 +63,28 @@ elif [ "$is_macos_target" = true ]; then
     args="${args//-ld_classic /}"
     
     # Get macOS SDK path for zig cc to find system libraries
+    extra_args=""
     if command -v xcrun &> /dev/null; then
         sdk_path=$(xcrun --show-sdk-path 2>/dev/null)
         if [ -n "$sdk_path" ] && [ -d "$sdk_path" ]; then
             echo "Using macOS SDK: $sdk_path"
+            # Use both -isysroot and explicit library search paths
             extra_args="-isysroot $sdk_path"
-            args="$extra_args $args"
+            extra_args="$extra_args -L$sdk_path/usr/lib"
+            extra_args="$extra_args -L$sdk_path/usr/lib/swift"
+            extra_args="$extra_args -L/usr/lib"
+            extra_args="$extra_args -L/usr/lib/swift"
+            extra_args="$extra_args -L/System/Library/Frameworks"
         else
             echo "Warning: Could not determine macOS SDK path, using fallback library paths"
             extra_args="-L/usr/lib -L/usr/lib/swift -L/System/Library/Frameworks"
-            args="$extra_args $args"
         fi
     else
         echo "Warning: xcrun not available, using fallback library paths"
         extra_args="-L/usr/lib -L/usr/lib/swift -L/System/Library/Frameworks"
-        args="$extra_args $args"
     fi
+    
+    args="$extra_args $args"
     
 else
     # Linux-specific argument handling (existing logic)
