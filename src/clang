@@ -46,10 +46,15 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
     
     # Remove frameworks that may cause issues in cross-compilation
     args="${args//-framework CryptoKit /}"
+    args="${args//-framework CryptoKit/}"
     args="${args//-framework GSS /}"
+    args="${args//-framework GSS/}"
     args="${args//-framework CoreFoundation /}"
+    args="${args//-framework CoreFoundation/}"
     args="${args//-framework Foundation /}"
+    args="${args//-framework Foundation/}"
     args="${args//-framework Security /}"
+    args="${args//-framework Security/}"
     
     # Note: Cross-compilation to macOS has inherent limitations
     # Applications using Objective-C/Swift runtime may fail at link time

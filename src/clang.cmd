@@ -6,7 +6,7 @@
   exit /B 1
 )
 
-set args=%*
+set "args=%*"
 
 rem Detect if this is a macOS target by looking for macOS-specific flags
 echo %args% | findstr /C:"-apple-darwin" /C:"-framework" /C:"-exported_symbols_list" >nul
@@ -15,24 +15,39 @@ if not errorlevel 1 (
     echo Cross-compiling to macOS target using PublishAotCross...
     
     rem Handle macOS-specific flags that zig doesn't support
-    set args=%args:-ld_classic =%
+    rem Remove -ld_classic flag which is macOS-specific
+    set "args=%args:-ld_classic =%"
+    set "args=%args: -ld_classic=%"
     
     rem Remove problematic libraries that may not be available during cross-compilation
-    set args=%args:-lswiftCore =%
-    set args=%args:-lswiftFoundation =%
-    set args=%args:-licucore =%
-    set args=%args:-L/usr/lib/swift =%
-    set args=%args:-lobjc =%
-    set args=%args:-lz =%
-    set args=%args:-ldl =%
-    set args=%args:-lm =%
+    set "args=%args:-lswiftCore =%"
+    set "args=%args: -lswiftCore=%"
+    set "args=%args:-lswiftFoundation =%"
+    set "args=%args: -lswiftFoundation=%"
+    set "args=%args:-licucore =%"
+    set "args=%args: -licucore=%"
+    set "args=%args:-L/usr/lib/swift =%"
+    set "args=%args: -L/usr/lib/swift=%"
+    set "args=%args:-lobjc =%"
+    set "args=%args: -lobjc=%"
+    set "args=%args:-lz =%"
+    set "args=%args: -lz=%"
+    set "args=%args:-ldl =%"
+    set "args=%args: -ldl=%"
+    set "args=%args:-lm =%"
+    set "args=%args: -lm=%"
     
     rem Remove frameworks that may cause issues in cross-compilation
-    set args=%args:-framework CryptoKit =%
-    set args=%args:-framework GSS =%
-    set args=%args:-framework CoreFoundation =%
-    set args=%args:-framework Foundation =%
-    set args=%args:-framework Security =%
+    set "args=%args:-framework CryptoKit =%"
+    set "args=%args: -framework CryptoKit=%"
+    set "args=%args:-framework GSS =%"
+    set "args=%args: -framework GSS=%"
+    set "args=%args:-framework CoreFoundation =%"
+    set "args=%args: -framework CoreFoundation=%"
+    set "args=%args:-framework Foundation =%"
+    set "args=%args: -framework Foundation=%"
+    set "args=%args:-framework Security =%"
+    set "args=%args: -framework Security=%"
     
     rem Note: Cross-compilation to macOS has inherent limitations
     echo Warning: Cross-compilation removes system libraries/frameworks that may be required at runtime
@@ -41,19 +56,19 @@ if not errorlevel 1 (
     rem Linux-specific argument handling (existing logic)
     
     rem Works around zlib not being available with zig. This is not great.
-    set args=%args:-lz =%
+    set "args=%args:-lz =%"
 
     rem Work around a .NET 8 Preview 6 issue
-    set args=%args:'-Wl,-rpath,$ORIGIN'=-Wl,-rpath,$ORIGIN%
+    set "args=%args:'-Wl,-rpath,$ORIGIN'=-Wl,-rpath,$ORIGIN%"
 
     rem Work around parameters unsupported by zig. Just drop them from the command line.
-    set args=%args:--discard-all=--as-needed%
-    set args=%args:-Wl,-pie =%
-    set args=%args:-pie =%
-    set args=%args:-Wl,-e0x0 =%
+    set "args=%args:--discard-all=--as-needed%"
+    set "args=%args:-Wl,-pie =%"
+    set "args=%args:-pie =%"
+    set "args=%args:-Wl,-e0x0 =%"
 
     rem Works around zig linker dropping necessary parts of the executable.
-    set args=-Wl,-u,__Module %args%
+    set "args=-Wl,-u,__Module %args%"
 )
 
 rem Run zig cc
