@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Check if zig is available
+# Check if zig is available - needed for all scenarios now
 if ! command -v zig &> /dev/null; then
     echo "Error: zig is not on the PATH. Install zig and make sure it's on PATH. Follow instructions at https://github.com/MichalStrehovsky/PublishAotCross."
     exit 1
@@ -9,20 +9,125 @@ fi
 # Get all arguments
 args="$@"
 
-# Works around zlib not being available with zig. This is not great.
-args="${args//-lz /}"
+# Detect if this is a macOS target by looking for macOS-specific flags or target
+is_macos_target=false
+if [[ "$args" == *"-apple-darwin"* ]] || [[ "$args" == *"-framework"* ]] || [[ "$args" == *"-exported_symbols_list"* ]] || [[ "$args" == *"x86_64-macos"* ]] || [[ "$args" == *"aarch64-macos"* ]]; then
+    is_macos_target=true
+fi
 
-# Work around a .NET 8 Preview 6 issue
-args="${args//\'-Wl,-rpath,\$ORIGIN\'/-Wl,-rpath,\$ORIGIN}"
+# Detect if we're running on macOS (native compilation)
+is_macos_host=false
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    is_macos_host=true
+fi
 
-# Work around parameters unsupported by zig. Just drop them from the command line.
-args="${args//--discard-all/--as-needed}"
-args="${args//-Wl,-pie /}"
-args="${args//-pie /}"
-args="${args//-Wl,-e0x0 /}"
+# Only apply cross-compilation fixes when targeting macOS from a non-macOS host
+is_cross_compiling_to_macos=false
+if [ "$is_macos_target" = true ] && [ "$is_macos_host" = false ]; then
+    is_cross_compiling_to_macos=true
+fi
 
-# Works around zig linker dropping necessary parts of the executable.
-args="-Wl,-u,__Module $args"
+if [ "$is_cross_compiling_to_macos" = true ]; then
+    # macOS cross-compilation argument handling
+    echo "Cross-compiling to macOS target using PublishAotCross..."
+    
+    # Handle macOS-specific flags that zig doesn't support - comprehensive removal
+    args=" $args "
+    args="${args// -ld_classic / }"
+    
+    # Remove problematic libraries that may not be available during cross-compilation - comprehensive removal
+    args="${args// -lswiftCore / }"
+    args="${args// -lswiftFoundation / }"
+    args="${args// -licucore / }"
+    args="${args// -L\/usr\/lib\/swift / }"
+    args="${args// -lobjc / }"
+    args="${args// -lz / }"
+    args="${args// -ldl / }"
+    args="${args// -lm / }"
+    
+    # Remove frameworks that may cause issues in cross-compilation - comprehensive removal
+    args="${args// -framework CryptoKit / }"
+    args="${args// -framework GSS / }"
+    args="${args// -framework CoreFoundation / }"
+    args="${args// -framework Foundation / }"
+    args="${args// -framework Security / }"
+    
+    # Clean up extra spaces and trim
+    args="${args//  / }"
+    args=$(echo "$args" | sed 's/^ *//;s/ *$//')
+    
+    # Note: Cross-compilation to macOS has inherent limitations
+    # Applications using Objective-C/Swift runtime may fail at link time
+    echo "Warning: Cross-compilation removes system libraries/frameworks that may be required at runtime"
+    
+elif [ "$is_macos_target" = true ]; then
+    # Native macOS compilation using zig cc with proper SDK configuration
+    echo "Native macOS compilation using zig cc..."
+    
+    # Remove zig-unsupported flags but keep essential libraries and frameworks
+    args="${args//-ld_classic /}"
+    
+    # Get macOS SDK path for zig cc to find system libraries and frameworks
+    extra_args=""
+    if command -v xcrun &> /dev/null; then
+        sdk_path=$(xcrun --show-sdk-path 2>/dev/null)
+        if [ -n "$sdk_path" ] && [ -d "$sdk_path" ]; then
+            echo "Using macOS SDK: $sdk_path"
+            # Use both -isysroot and explicit library/framework search paths
+            extra_args="-isysroot $sdk_path"
+            extra_args="$extra_args -L$sdk_path/usr/lib"
+            extra_args="$extra_args -L$sdk_path/usr/lib/swift"
+            extra_args="$extra_args -L/usr/lib"
+            extra_args="$extra_args -L/usr/lib/swift"
+            # Add framework search paths for zig cc to find macOS frameworks
+            extra_args="$extra_args -F$sdk_path/System/Library/Frameworks"
+            extra_args="$extra_args -F/System/Library/Frameworks"
+        else
+            echo "Warning: Could not determine macOS SDK path, using fallback library and framework paths"
+            extra_args="-L/usr/lib -L/usr/lib/swift -F/System/Library/Frameworks"
+        fi
+    else
+        echo "Warning: xcrun not available, using fallback library and framework paths"
+        extra_args="-L/usr/lib -L/usr/lib/swift -F/System/Library/Frameworks"
+    fi
+    
+    args="$extra_args $args"
+    
+else
+    # Linux-specific argument handling (existing logic)
+    
+    # Works around zlib not being available with zig. This is not great.
+    args="${args//-lz /}"
 
-# Run zig cc
+    # Work around a .NET 8 Preview 6 issue
+    args="${args//\'-Wl,-rpath,\$ORIGIN\'/-Wl,-rpath,\$ORIGIN}"
+
+    # Work around parameters unsupported by zig. Just drop them from the command line.
+    args="${args//--discard-all/--as-needed}"
+    
+    # Convert args to array for precise flag removal
+    read -ra arg_array <<< "$args"
+    filtered_args=()
+    
+    for arg in "${arg_array[@]}"; do
+        # Skip exact matches for problematic flags
+        if [[ "$arg" != "-pie" && "$arg" != "-Wl,-pie" ]]; then
+            filtered_args+=("$arg")
+        fi
+    done
+    
+    # Reconstruct args string
+    args="${filtered_args[*]}"
+    
+    # Remove other unsupported flags
+    args="${args// -Wl,-e0x0 / }"
+    args="${args//-Wl,-e0x0 /}"
+    args="${args// -Wl,-e0x0/}"
+    args="${args//-Wl,-e0x0/}"
+
+    # Works around zig linker dropping necessary parts of the executable.
+    args="-Wl,-u,__Module $args"
+fi
+
+# Use zig cc for all scenarios
 zig cc $args
