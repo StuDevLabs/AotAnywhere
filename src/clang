@@ -95,6 +95,7 @@ elif [ "$is_macos_target" = true ]; then
     
 else
     # Linux-specific argument handling (existing logic)
+    echo "Cross-compiling to Linux target using PublishAotCross..."
     
     # Works around zlib not being available with zig. This is not great.
     args="${args//-lz /}"
