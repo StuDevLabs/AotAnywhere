@@ -26,6 +26,13 @@ jobs:
         with:
           dotnet-version: '8.0.x'
           include-prerelease: true
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.nuproj', '**/*.csproj', '**/global.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
       - name: Build (CI)
         if: ${{ github.event.inputs.version == '' }}
         run: |

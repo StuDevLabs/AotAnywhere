@@ -41,6 +41,14 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.nuproj', '**/*.csproj', '**/global.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+      
       - name: Build NuGet package
         run: dotnet build -t:Pack src/PublishAotCross.nuproj
       
