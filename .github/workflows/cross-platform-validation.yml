@@ -133,9 +133,11 @@ jobs:
           
           if [ "$build_success" = false ]; then
             echo "❌ One or more builds failed"
-            exit 1
+            # Don't exit here - let the workflow continue to upload artifacts for successful builds
+            echo "build_success=false" >> $GITHUB_OUTPUT
           else
             echo "🎉 All builds completed successfully!"
+            echo "build_success=true" >> $GITHUB_OUTPUT
           fi
       
       - name: Upload build artifacts

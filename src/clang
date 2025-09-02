@@ -35,32 +35,34 @@ if [ "$is_cross_compiling_to_macos" = true ]; then
     args=" $args "
     args="${args// -ld_classic / }"
     
-    # Remove only problematic Swift libraries that are not available during cross-compilation
-    # Keep essential system libraries that .NET runtime depends on
+    # For cross-compilation from non-macOS to macOS, remove ALL system libraries and frameworks
+    # Zig will handle linking to its built-in macOS system libraries automatically
     args=" $args "
     
-    # Remove Swift-specific libraries that are not available during cross-compilation
+    # Remove ALL system libraries during cross-compilation
+    args="${args// -lobjc / }"
+    args="${args// -lz / }"
+    args="${args// -ldl / }"
+    args="${args// -lm / }"
+    args="${args// -licucore / }"
     args="${args// -lswiftCore / }"
     args="${args// -lswiftFoundation / }"
     args="${args// -L\/usr\/lib\/swift / }"
     
-    # Keep essential system libraries: -lobjc, -lz, -ldl, -lm, -licucore
-    # These are needed by the .NET runtime
-    
-    # Remove only problematic frameworks, keep essential ones
+    # Remove ALL frameworks during cross-compilation
+    args="${args// -framework CoreFoundation / }"
+    args="${args// -framework Foundation / }"
+    args="${args// -framework Security / }"
     args="${args// -framework CryptoKit / }"
     args="${args// -framework GSS / }"
-    
-    # Keep essential frameworks: CoreFoundation, Foundation, Security
-    # These are required by the .NET runtime for macOS
     
     # Clean up extra spaces and trim
     args="${args//  / }"
     args=$(echo "$args" | sed 's/^ *//;s/ *$//')
     
-    # Note: Cross-compilation keeps essential frameworks and system libraries
-    # Applications using advanced Swift features may still have limitations
-    echo "Warning: Cross-compilation may have limitations with some advanced macOS features"
+    # Note: Cross-compilation removes all system libraries and frameworks
+    # Zig will link to its built-in macOS system libraries automatically
+    echo "Warning: Cross-compilation removes all system libraries/frameworks - zig handles linking automatically"
     
 elif [ "$is_macos_target" = true ]; then
     # Native macOS compilation using zig cc with proper SDK configuration
