@@ -46,6 +46,8 @@ jobs:
       
       - name: Build and publish for all target platforms
         shell: bash
+        env:
+          ZIG_SHIM_DEBUG: "1"
         run: |
           # Split the targets and build each one
           IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.targets }}"
