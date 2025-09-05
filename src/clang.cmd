@@ -1,6 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: ==========================================================================
+:: clang.cmd - Wrapper to redirect clang calls to 'zig cc'.
+:: ==========================================================================
+
 :: --- Dependency Check ---
 @where zig >nul 2>&1
 @if ERRORLEVEL 1 (
@@ -80,9 +84,27 @@ exit /B !ERRORLEVEL!
 
 
 :trim_args
-rem Helper function to trim leading/trailing spaces from a variable.
-rem Usage: call :trim_args variable_name
-setlocal
-for /f "tokens=* delims= " %%a in ("%*") do set "trimmed=%%a"
-endlocal & set "%1=%trimmed%"
-goto :eof
+setlocal enabledelayedexpansion
+set "var_name=%~1"
+call set "input_args=%%%~1%%"
+
+rem Remove leading spaces
+for /f "tokens=* delims= " %%a in ("!input_args!") do set "input_args=%%a"
+
+rem Remove trailing spaces
+:trim_end
+if "!input_args:~-1!"==" " (
+    set "input_args=!input_args:~0,-1!"
+    goto trim_end
+)
+
+rem Replace multiple spaces with single space
+:normalize_spaces
+set "temp_args=!input_args:  = !"
+if not "!temp_args!"=="!input_args!" (
+    set "input_args=!temp_args!"
+    goto normalize_spaces
+)
+
+endlocal & set "%var_name%=%input_args%"
+goto :EOF
