@@ -35,17 +35,20 @@ if not errorlevel 1 (
     rem Remove host-specific library search path. Zig finds these automatically.
     set "args=!args: -L/usr/lib/swift = !"
 
-    rem Take full control of the target specification to avoid parsing issues.
-    rem First, remove the incoming target flag from the build system.
+    rem Take full control of the target specification using the correct format.
+    rem First, detect and store the target architecture.
+    set "TARGET_ARCH="
+    echo !args! | findstr /C:"--target=x86_64-macos" >nul && set "TARGET_ARCH=x86_64-macos"
+    echo !args! | findstr /C:"--target=aarch64-macos" >nul && set "TARGET_ARCH=aarch64-macos"
+
+    rem Remove the incoming target flag from its original position.
     set "args=!args: --target=x86_64-macos = !"
     set "args=!args: --target=aarch64-macos = !"
 
-    rem Now, append our own canonical target flags at the end. This forces Zig
-    rem to activate its internal SDK.
-    if " !args! "==" !args:x86_64-macos=! " (
-        set "args=!args! --target aarch64-macos -mmacosx-version-min=11.0"
-    ) else (
-        set "args=!args! --target x86_64-macos -mmacosx-version-min=11.0"
+    rem If we detected a target, append our own canonical flags at the end
+    rem using the correct single-argument format (--target=value).
+    if defined TARGET_ARCH (
+        set "args=!args! --target=!TARGET_ARCH! -mmacosx-version-min=11.0"
     )
 
 ) else (
