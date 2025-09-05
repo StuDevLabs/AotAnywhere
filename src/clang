@@ -141,8 +141,9 @@ process_linux_args() {
             shift
             ;;
         # .NET issue workaround (removes single quotes)
-        "'-Wl,-rpath,$ORIGIN'")
-            filtered_args+=("-Wl,-rpath,$ORIGIN")
+        "'-Wl,-rpath,\$ORIGIN'")
+            # Use single quotes here to add the literal string to the array.
+            filtered_args+=('-Wl,-rpath,$ORIGIN')
             shift
             ;;
         *)
