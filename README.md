@@ -81,6 +81,17 @@ Note: Using invariant globalization disables culture-specific formatting, sortin
 
 If you don't want to use Zig from the Vezel.Zig.Toolsets NuGet package, you can specify `/p:UseExternalZig=true`. This will use whatever Zig is on your PATH. [Download](https://ziglang.org/download/) an archive with Zig for your host machine, extract it and place it on your PATH.
 
+### Disabling Argument Filtering
+
+By default, the package filters certain arguments (system libraries, frameworks, and linker flags) when cross-compiling to ensure compatibility. If you need to pass arguments from the .NET SDK to `zig cc` unmodified, you can set the `ZIG_CC_PASSTHROUGH` environment variable:
+
+```bash
+export ZIG_CC_PASSTHROUGH=true
+dotnet publish -r linux-x64
+```
+
+This bypasses all argument filtering and passes the original .NET SDK arguments directly to Zig. Use this when you need complete control over the compilation arguments or when working with custom toolchains that require specific flags.
+
 
 Even though Zig allows crosscompiling for Windows as well, it's not possible to crosscompile PublishAot like this due to ABI differences (MSVC vs. MingW ABI).
 
