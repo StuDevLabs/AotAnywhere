@@ -74,19 +74,18 @@ main() {
 # --- Argument Processing Functions ---
 
 process_macos_cross_compile_args() {
-    echo "Warning: Removing system libs/frameworks for cross-compilation."
-    local -a input_args=("$@")
+    # No longer removing system libs/frameworks.
+    # Zig handles them correctly with its bundled macOS SDK.
+    echo "[clang.sh] Processing macOS cross-compilation args for Zig."
+
     while [[ $# -gt 0 ]]; do
         case "$1" in
-        # Flags to remove completely
-        -ld_classic | -lobjc | -lz | -ldl | -lm | -licucore | -lswiftCore | -lswiftFoundation)
-            shift
-            ;;
-        # Flags that consume the next argument  
-        -L/usr/lib/swift)
-            shift 2
+        # Only remove flags that LLD (Zig's linker) does not support.
+        -ld_classic)
+            shift # Discard this argument
             ;;
         *)
+            # Keep everything else.
             filtered_args+=("$1")
             shift
             ;;
