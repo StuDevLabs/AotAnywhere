@@ -20,10 +20,6 @@ main() {
     fi
 
     local is_macos_target=false
-    local is_macos_host=false
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        is_macos_host=true
-    fi
     for arg in "${args[@]}"; do
         case "$arg" in
         *-apple-darwin* | -framework | *-macos*)
@@ -62,7 +58,23 @@ process_macos_args() {
         local next_arg="${2:-}"
 
         case "$current_arg" in
-        # Case 1: Handle correctly formed framework flags by consuming both parts.
+        # === FIX: START ===
+        # Case 1: Fix incomplete target triples from the build system.
+        # Zig needs the full 'arch-os-abi' format (e.g., with '-none')
+        # to correctly locate its internal macOS SDK.
+        --target=x86_64-macos)
+            echo "[clang.sh] Fixing target triple: '$current_arg' -> '--target=x86_64-macos-none'"
+            filtered_args+=("--target=x86_64-macos-none")
+            shift 1
+            ;;
+        --target=aarch64-macos)
+            echo "[clang.sh] Fixing target triple: '$current_arg' -> '--target=aarch64-macos-none'"
+            filtered_args+=("--target=aarch64-macos-none")
+            shift 1
+            ;;
+        # === FIX: END ===
+
+        # Case 2: Handle correctly formed framework flags.
         -framework)
             if [[ -n "$next_arg" ]]; then
                 filtered_args+=("$current_arg" "$next_arg")
@@ -73,27 +85,22 @@ process_macos_args() {
             fi
             ;;
 
-        # Case 2: Fix bare framework names from the build system.
+        # Case 3: Fix bare framework names.
         CoreFoundation | Foundation | Security | AppKit | GSS | CryptoKit)
             echo "[clang.sh] Fixing bare framework: '$current_arg' -> '-framework $current_arg'"
             filtered_args+=("-framework" "$current_arg")
             shift 1
             ;;
 
-        # === FIX: START ===
-        # Case 3: Remove redundant system library flags. On macOS, these are
-        # implicitly linked via libSystem when any framework is used.
-        # 'zig cc' fails trying to find them as standalone .tbd files.
+        # Case 4: Remove redundant system library flags.
         -lobjc | -lswiftCore | -lswiftFoundation | -lz | -licucore | -lm | -ldl)
-            echo "[clang.sh] Removing redundant macOS system library flag: $current_arg"
-            shift 1 # Consume and discard the flag
+            echo "[clang.sh] Removing redundant system library flag: $current_arg"
+            shift 1
             ;;
-        # === FIX: END ===
 
-        # Case 4: Remove other flags unsupported by zig's linker or that
-        # break cross-compilation.
+        # Case 5: Remove other unsupported/problematic flags.
         -ld_classic | -L/usr/lib/swift)
-            echo "[clang.sh] Removing unsupported/problematic flag: $current_arg"
+            echo "[clang.sh] Removing unsupported flag: $current_arg"
             shift 1
             ;;
 
