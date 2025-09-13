@@ -12,7 +12,8 @@ main() {
 
     # --- Optional Debug Logging ---
     if [[ -n "${ZIG_SHIM_DEBUG:-}" ]]; then
-        echo "[DEBUG] Original args:"
+        echo "[DEBUG] Original args from build system:"
+        # Use printf for safer, more reliable quoting of args
         printf "  '%s'\n" "${args[@]}"
     fi
 
@@ -41,26 +42,26 @@ main() {
     done
 
     # --- Argument Processing ---
+    # The 'filtered_args' array will be populated by the processing functions.
     local -a filtered_args=()
     if [[ "$is_macos_target" == true && "$is_macos_host" == false ]]; then
         # --- Case 1: Cross-compiling to macOS (e.g., from Linux) ---
-        echo "[clang.sh] Detected macOS cross-compilation target."
+        echo "[clang.sh] Detected macOS cross-compilation. Processing args for Zig..."
         process_macos_cross_compile_args "${args[@]}"
     elif [[ "$is_macos_target" == true ]]; then
         # --- Case 2: Native compilation on macOS ---
-        echo "[clang.sh] Detected native macOS compilation."
+        echo "[clang.sh] Detected native macOS compilation. Processing args for Zig..."
         process_macos_native_args "${args[@]}"
     else
         # --- Case 3: Compiling for Linux ---
-        echo "[clang.sh] Detected Linux compilation target."
+        echo "[clang.sh] Detected Linux compilation target. Processing args for Zig..."
         process_linux_args "${args[@]}"
     fi
 
-    # The processing functions will populate the 'filtered_args' array.
-
     # --- Optional Debug Logging ---
     if [[ -n "${ZIG_SHIM_DEBUG:-}" ]]; then
-        echo "[DEBUG] Final command:"
+        echo "[DEBUG] Final modified command to be executed:"
+        # Use 'cc' as the subcommand for clarity
         printf "  'zig' 'cc' "
         printf "'%s' " "${filtered_args[@]}"
         echo
@@ -68,16 +69,25 @@ main() {
 
     # --- Execution ---
     # The "${filtered_args[@]}" syntax correctly handles args with spaces.
-    zig cc "${filtered_args[@]}"
+    exec zig cc "${filtered_args[@]}"
 }
 
 # --- Argument Processing Functions ---
 
 process_macos_cross_compile_args() {
-    echo "[clang.sh] Processing macOS cross-compilation args for Zig."
+    echo "[clang.sh] Applying cross-compilation transformations."
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+        # === FIX: START ===
+        # Detect bare framework names passed by the .NET SDK and prepend the
+        # required '-framework' flag that 'zig cc' expects.
+        CoreFoundation | Foundation | Security | AppKit | GSS | CryptoKit)
+            filtered_args+=("-framework" "$1")
+            shift # Consume the framework name
+            ;;
+        # === FIX: END ===
+
         # Remove flags that LLD (Zig's linker) does not support.
         -ld_classic)
             shift # Discard this argument
@@ -87,7 +97,7 @@ process_macos_cross_compile_args() {
             shift # Discard this argument
             ;;
         *)
-            # Keep everything else. These are valid for Zig's SDK.
+            # Keep everything else.
             filtered_args+=("$1")
             shift
             ;;
@@ -96,33 +106,36 @@ process_macos_cross_compile_args() {
 }
 
 process_macos_native_args() {
+    # This function is more complex as it tries to find the native SDK.
+    # We still add the framework fix for consistency.
     local -a extra_args=()
     if command -v xcrun &>/dev/null; then
         local sdk_path
         sdk_path=$(xcrun --show-sdk-path 2>/dev/null || true)
-        if [[ -n "$sdk_path" && -d "$sdk_path" ]]; then
-            echo "Using macOS SDK: $sdk_path"
+        if [[ -n "$sdk_path" && -d "$sdk_path" ]];
+        then
+            echo "[clang.sh] Using macOS SDK found at: $sdk_path"
             extra_args+=("-isysroot" "$sdk_path")
-            extra_args+=("-L$sdk_path/usr/lib")
-            extra_args+=("-L$sdk_path/usr/lib/swift")
-            extra_args+=("-F$sdk_path/System/Library/Frameworks")
         else
-            echo "Warning: Could not determine macOS SDK path. Using fallbacks." >&2
-            extra_args+=("-L/usr/lib")
-            extra_args+=("-L/usr/lib/swift")
-            extra_args+=("-F/System/Library/Frameworks")
+            echo "[clang.sh] Warning: 'xcrun' failed to find SDK path. zig cc may fall back to its own." >&2
         fi
     else
-        echo "Warning: xcrun not available. Using fallbacks." >&2
-        extra_args+=("-L/usr/lib")
-        extra_args+=("-L/usr/lib/swift")
-        extra_args+=("-F/System/Library/Frameworks")
+        echo "[clang.sh] Warning: 'xcrun' not found. zig cc will use its bundled SDK." >&2
     fi
 
     # Prepend SDK flags and then filter the rest of the arguments.
     filtered_args+=("${extra_args[@]}")
     while [[ $# -gt 0 ]]; do
         case "$1" in
+        # === FIX: START ===
+        # Apply the same fix here for consistency, even though native
+        # clang might be more lenient.
+        CoreFoundation | Foundation | Security | AppKit | GSS | CryptoKit)
+            filtered_args+=("-framework" "$1")
+            shift # Consume the framework name
+            ;;
+        # === FIX: END ===
+
         -ld_classic) # Remove unsupported flag
             shift
             ;;
@@ -135,7 +148,7 @@ process_macos_native_args() {
 }
 
 process_linux_args() {
-    # Prepend required linker flag
+    # This function remains unchanged as the issue is specific to macOS.
     filtered_args+=("-Wl,-u,__Module")
 
     while [[ $# -gt 0 ]]; do
