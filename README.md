@@ -79,6 +79,14 @@ Note: Using invariant globalization disables culture-specific formatting, sortin
 
 ## Advanced Configuration
 
+### The clang shim
+
+Cross-compilation works by putting a small `clang` shim on `PATH` that rewrites the linker invocation and forwards it to `zig cc`. The package ships this shim **prebuilt** for the common host RIDs (Windows x86/x64/arm64, macOS x64/arm64, Linux x64/arm64) under `build/shim/<host-rid>`, so a normal build just copies it and does no compilation. On any other host the shim is compiled on demand from the bundled `clang_shim.zig` with the Zig toolchain. Pass `/p:UsePrebuiltClangShim=false` to force the compile-on-demand path.
+
+The prebuilt shims are cross-compiled from a single machine at pack time (see `BuildClangShims` in `PublishAotCross.nuproj`); Zig makes producing all host binaries from one host trivial.
+
+### Using your own Zig
+
 If you don't want to use Zig from the Vezel.Zig.Toolsets NuGet package, you can specify `/p:UseExternalZig=true`. This will use whatever Zig is on your PATH. [Download](https://ziglang.org/download/) an archive with Zig for your host machine, extract it and place it on your PATH.
 
 

@@ -3,6 +3,12 @@
 
     <TargetFramework>netstandard2.0</TargetFramework>
 
+    <!-- Zig used to cross-compile the prebuilt shims below (see BuildClangShims).
+         Keep this in sync with the ZigVersion default in Crosscompile.targets. -->
+    <ZigVersion Condition="'$(ZigVersion)' == ''">0.16.0.2</ZigVersion>
+    <PackHostRuntimeIdentifier Condition="'$(PackHostRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</PackHostRuntimeIdentifier>
+    <ShimIntermediateDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'shim'))</ShimIntermediateDir>
+
     <PackageId>PublishAotCross</PackageId>
     <Version Condition="'$(Version)' == ''">42.42.42-dev</Version>
     <Authors>Michal Strehovsky</Authors>
@@ -11,6 +17,10 @@
     <PackageProjectUrl>https://github.com/MichalStrehovsky/PublishAotCross</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- Zig is only needed to build the shims at pack time (PrivateAssets),
+         so the package itself has no dependencies to express. -->
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
   </PropertyGroup>
 
   <ItemGroup>
@@ -35,4 +45,67 @@
       <PackagePath>/</PackagePath>
     </None>
   </ItemGroup>
+
+  <!-- Zig for the pack host, used to cross-compile the shims for every host RID. -->
+  <ItemGroup>
+    <PackageReference Include="Vezel.Zig.Toolsets.$(PackHostRuntimeIdentifier)"
+      Version="$(ZigVersion)"
+      PrivateAssets="all"
+      GeneratePathProperty="true" />
+  </ItemGroup>
+
+  <!-- Host RIDs we ship a prebuilt shim for, and the zig target triple for each.
+       Linux uses musl so the shim is a static binary that runs on any distro. -->
+  <ItemGroup>
+    <ShimTarget Include="win-x64"     Triple="x86_64-windows"     Exe="clang.exe" />
+    <ShimTarget Include="win-arm64"   Triple="aarch64-windows"    Exe="clang.exe" />
+    <ShimTarget Include="win-x86"     Triple="x86-windows"        Exe="clang.exe" />
+    <ShimTarget Include="osx-x64"     Triple="x86_64-macos"       Exe="clang" />
+    <ShimTarget Include="osx-arm64"   Triple="aarch64-macos"      Exe="clang" />
+    <ShimTarget Include="linux-x64"   Triple="x86_64-linux-musl"  Exe="clang" />
+    <ShimTarget Include="linux-arm64" Triple="aarch64-linux-musl" Exe="clang" />
+  </ItemGroup>
+
+  <Target Name="BuildClangShims"
+          Inputs="clang_shim.zig;@(ShimTarget)"
+          Outputs="@(ShimTarget->'$(ShimIntermediateDir)%(Identity)/%(Exe)')">
+
+    <PropertyGroup>
+      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('win-x86'))">$(PkgVezel_Zig_Toolsets_win-x86)/tools</_ZigTools>
+      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('win-x64'))">$(PkgVezel_Zig_Toolsets_win-x64)/tools</_ZigTools>
+      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('win-arm64'))">$(PkgVezel_Zig_Toolsets_win-arm64)/tools</_ZigTools>
+      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('osx-x64'))">$(PkgVezel_Zig_Toolsets_osx-x64)/tools</_ZigTools>
+      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('osx-arm64'))">$(PkgVezel_Zig_Toolsets_osx-arm64)/tools</_ZigTools>
+      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('linux-x64'))">$(PkgVezel_Zig_Toolsets_linux-x64)/tools</_ZigTools>
+      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('linux-arm64'))">$(PkgVezel_Zig_Toolsets_linux-arm64)/tools</_ZigTools>
+      <_ZigExe Condition="$(PackHostRuntimeIdentifier.StartsWith('win-'))">$(_ZigTools)/zig.exe</_ZigExe>
+      <_ZigExe Condition="'$(_ZigExe)' == ''">$(_ZigTools)/zig</_ZigExe>
+    </PropertyGroup>
+
+    <Error Condition="'$(_ZigTools)' == ''"
+           Text="No Vezel.Zig.Toolsets package for pack host '$(PackHostRuntimeIdentifier)'. Set PackHostRuntimeIdentifier to a supported host RID." />
+
+    <MakeDir Directories="$(ShimIntermediateDir)%(ShimTarget.Identity)" />
+
+    <!-- ReleaseSafe keeps runtime safety checks (the shim runs in the link
+         hot path); -fstrip drops debug info to keep the package small. -->
+    <Exec Command="&quot;$(_ZigExe)&quot; build-exe -O ReleaseSafe -fstrip -target %(ShimTarget.Triple) -femit-bin=&quot;$(ShimIntermediateDir)%(ShimTarget.Identity)/%(ShimTarget.Exe)&quot; &quot;$(MSBuildProjectDirectory)/clang_shim.zig&quot;" />
+
+  </Target>
+
+  <!-- Register the shims for packing in a separate, always-run target: doing it
+       inside BuildClangShims would drop them from the package whenever that
+       target is skipped as up-to-date on an incremental pack. -->
+  <Target Name="IncludeClangShimsInPackage"
+          DependsOnTargets="BuildClangShims"
+          BeforeTargets="_GetPackageFiles">
+
+    <ItemGroup>
+      <None Include="$(ShimIntermediateDir)%(ShimTarget.Identity)/%(ShimTarget.Exe)">
+        <Pack>true</Pack>
+        <PackagePath>build/shim/%(ShimTarget.Identity)/</PackagePath>
+      </None>
+    </ItemGroup>
+
+  </Target>
 </Project>

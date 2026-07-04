@@ -6,9 +6,21 @@
     <ZigVersion Condition="'$(ZigVersion)' == ''">0.16.0.2</ZigVersion>
     <UseExternalZig Condition="'$(UseExternalZig)' == ''">false</UseExternalZig>
 
-    <!-- The clang shim is compiled on demand with the zig toolchain above,
-         so a single Zig source covers every host OS and architecture. -->
+    <!-- The package ships a shim prebuilt for each common host under
+         build/shim/<host-rid>; when one matches this host we use it and skip
+         compilation entirely. Otherwise the single Zig source is compiled on
+         demand with the zig toolchain above, covering any host OS/arch. -->
     <ClangShimSource>$(MSBuildThisFileDirectory)clang_shim.zig</ClangShimSource>
+
+    <PrebuiltClangShimDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', 'shim', '$(HostRuntimeIdentifier)'))</PrebuiltClangShimDir>
+    <PrebuiltClangShim Condition="$(HostRuntimeIdentifier.StartsWith('win-'))">$(PrebuiltClangShimDir)clang.exe</PrebuiltClangShim>
+    <PrebuiltClangShim Condition="'$(PrebuiltClangShim)' == ''">$(PrebuiltClangShimDir)clang</PrebuiltClangShim>
+    <UsePrebuiltClangShim Condition="'$(UsePrebuiltClangShim)' == '' and Exists('$(PrebuiltClangShim)')">true</UsePrebuiltClangShim>
+    <UsePrebuiltClangShim Condition="'$(UsePrebuiltClangShim)' == ''">false</UsePrebuiltClangShim>
+
+    <!-- The shim is always materialized into the intermediate dir (so we can
+         guarantee the executable bit regardless of how the package was
+         packed), and that dir is what we put on PATH for the ILC link. -->
     <ClangShimDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'publishaotcross'))</ClangShimDir>
     <ClangShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)clang.exe</ClangShimBinary>
     <ClangShimBinary Condition="'$(ClangShimBinary)' == ''">$(ClangShimDir)clang</ClangShimBinary>
@@ -81,7 +93,24 @@
 
   </UsingTask>
 
+  <!-- Fast path: copy the shim prebuilt for this host out of the package.
+       Copy (rather than run it in place) so we can force the executable bit,
+       which is lost when the package is packed on Windows. -->
+  <Target Name="CopyPrebuiltClangShim"
+          Condition="'$(UsePrebuiltClangShim)' == 'true'"
+          BeforeTargets="SetupOSSpecificProps"
+          Inputs="$(PrebuiltClangShim)"
+          Outputs="$(ClangShimBinary)">
+
+    <MakeDir Directories="$(ClangShimDir)" />
+    <Copy SourceFiles="$(PrebuiltClangShim)" DestinationFiles="$(ClangShimBinary)" OverwriteReadOnlyFiles="true" />
+    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ClangShimBinary)&quot;" />
+
+  </Target>
+
+  <!-- Fallback: compile the shim on demand for hosts we don't prebuild. -->
   <Target Name="CompileClangShim"
+          Condition="'$(UsePrebuiltClangShim)' != 'true'"
           DependsOnTargets="SetPathToZig"
           BeforeTargets="SetupOSSpecificProps"
           Inputs="$(ClangShimSource)"
@@ -93,7 +122,7 @@
   </Target>
 
   <Target Name="SetPathToClang"
-          DependsOnTargets="CompileClangShim"
+          DependsOnTargets="CopyPrebuiltClangShim;CompileClangShim"
           BeforeTargets="SetupOSSpecificProps">
 
     <PrependPath Value="$(ClangShimDir)" />
