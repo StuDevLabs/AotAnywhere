@@ -74,16 +74,42 @@ main() {
 # --- Argument Processing Functions ---
 
 process_macos_cross_compile_args() {
+    if [[ -n "${PUBLISHAOTCROSS_APPLE_SYSROOT:-}" ]]; then
+        # A sysroot with Apple framework/library stubs (.tbd files) was
+        # provided, so we can link system libs and frameworks for real.
+        echo "Using Apple sysroot stubs: $PUBLISHAOTCROSS_APPLE_SYSROOT"
+        local sysroot="$PUBLISHAOTCROSS_APPLE_SYSROOT"
+        filtered_args+=("-F$sysroot/System/Library/Frameworks")
+        filtered_args+=("-L$sysroot/usr/lib")
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+            # Flags to remove completely (unsupported by zig's linker)
+            -ld_classic)
+                shift
+                ;;
+            # Redirect absolute host paths into the sysroot
+            -L/usr/lib/swift)
+                filtered_args+=("-L$sysroot/usr/lib/swift")
+                shift
+                ;;
+            *)
+                filtered_args+=("$1")
+                shift
+                ;;
+            esac
+        done
+        return
+    fi
+
     echo "Warning: Removing system libs/frameworks for cross-compilation."
-    local -a input_args=("$@")
     while [[ $# -gt 0 ]]; do
         case "$1" in
         # Flags to remove completely
-        -ld_classic | -lobjc | -lz | -ldl | -lm | -licucore | -lswiftCore | -lswiftFoundation)
+        -ld_classic | -lobjc | -lz | -ldl | -lm | -licucore | -lswiftCore | -lswiftFoundation | -L/usr/lib/swift)
             shift
             ;;
         # Flags that consume the next argument
-        -L/usr/lib/swift | -framework)
+        -framework)
             shift 2
             ;;
         *)
