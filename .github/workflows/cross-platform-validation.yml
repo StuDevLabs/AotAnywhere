@@ -8,8 +8,34 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Build the prebuilt clang shims once, on a host whose zig can cross-compile
+  # every host's shim. The build jobs below consume these instead of compiling
+  # the shim on demand — which some hosts' zig cannot do at all (arm64-Windows
+  # zig 0.16 segfaults in build-exe). This mirrors how real consumers use the
+  # shipped package: the shim is prebuilt, not compiled on their machine.
+  pack:
+    # windows-latest (win-x64) is proven to cross-compile all seven shims; its
+    # zig is fine. (It is arm64-Windows zig specifically whose build-exe is broken.)
+    runs-on: windows-latest
+    name: Build prebuilt shims
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build NuGet package (all host shims)
+        run: dotnet build -t:Pack src/PublishAotCross.nuproj
+      - name: Upload prebuilt shims
+        uses: actions/upload-artifact@v7
+        with:
+          name: prebuilt-shims
+          path: src/obj/shim/
+
   # Build matrix: Test building from different host platforms to different target platforms
   build:
+    needs: pack
     strategy:
       fail-fast: false
       matrix:
@@ -56,13 +82,15 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       
-      - name: Build NuGet package
-        # Only build this host's own shim: it's a per-host smoke test, and some
-        # hosts' zig can't cross-compile the other shims (e.g. arm64-Windows zig
-        # segfaults building the x86_64-windows shim). The full set is built and
-        # published on windows-latest by the main.yml release job.
-        run: dotnet build -t:Pack src/PublishAotCross.nuproj -p:BuildAllShims=false
-      
+      # Drop the prebuilt shims where PublishAotCross.targets looks for them
+      # (src/shim/<host-rid>), so the publishes below use this host's prebuilt
+      # shim instead of compiling one — required on hosts whose zig can't.
+      - name: Download prebuilt shims
+        uses: actions/download-artifact@v8
+        with:
+          name: prebuilt-shims
+          path: src/shim
+
       - name: Build and publish for all target platforms
         shell: bash
         env:
