@@ -20,6 +20,16 @@
   ],
   "packageRules": [
     {
+      "description": "The PackageReference in Crosscompile.targets uses an unexpanded MSBuild property ($(HostRuntimeIdentifier)) as the package name; the built-in NuGet manager cannot resolve it (the custom manager above handles the real bump), so ignore it.",
+      "matchManagers": [
+        "nuget"
+      ],
+      "matchPackageNames": [
+        "/^Vezel\\.Zig\\.Toolsets\\.\\$\\(HostRuntimeIdentifier\\)$/"
+      ],
+      "enabled": false
+    },
+    {
       "matchPackageNames": [
         "Vezel.Zig.Toolsets.linux-x64"
       ],
