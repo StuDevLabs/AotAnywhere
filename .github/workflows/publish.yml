@@ -1,0 +1,78 @@
+name: Publish to NuGet
+
+# Keyed off the version tag that main.yml's release dispatch pushes, so releases
+# stay one-button: dispatch main.yml with a version -> it tags v<version> ->
+# this workflow validates, packs, and publishes StuDev.AotAnywhere to nuget.org.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # Require the full cross-platform matrix green on the tagged commit before we
+  # publish anything. Reusable via workflow_call (see cross-platform-validation.yml).
+  validate:
+    uses: ./.github/workflows/cross-platform-validation.yml
+
+  publish:
+    needs: validate
+    # windows-latest is the only host whose zig cross-compiles all six prebuilt
+    # shims (arm64-Windows zig 0.16 build-exe is broken; see the nuproj), so it
+    # is the one host that can pack the complete package. Matches the shim
+    # (`pack`) job in cross-platform-validation.yml.
+    runs-on: windows-latest
+    # Trusted publishing: NuGet/login mints a short-lived key from the OIDC
+    # token instead of a long-lived nuget.org API key. contents: write is for
+    # attaching the .nupkg to the GitHub release.
+    environment: release
+    permissions:
+      id-token: write
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Pack
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "Packing StuDev.AotAnywhere $version"
+          dotnet build -t:Pack src/AotAnywhere.nuproj -p:Version="$version"
+          nupkg=$(find src/bin -name "StuDev.AotAnywhere.$version.nupkg" | head -1)
+          if [ -z "$nupkg" ]; then echo "::error::packed nupkg not found for $version" >&2; exit 1; fi
+          mkdir -p artifacts
+          cp "$nupkg" artifacts/
+
+      - name: NuGet login (OIDC)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}  # nuget.org profile name, NOT email
+
+      - name: Push to NuGet
+        shell: bash
+        run: |
+          dotnet nuget push artifacts/*.nupkg \
+            --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
+      # Attach the published .nupkg to a GitHub release for traceability. Guarded
+      # so a re-run of a partially-completed publish updates the release instead
+      # of failing with a 422 already_exists.
+      - name: Attach package to GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" artifacts/*.nupkg --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg --generate-notes
+          fi

@@ -6,6 +6,9 @@ on:
   push:
     branches: [ master ]
   workflow_dispatch:
+  # Lets the release workflow (publish.yml) require the full matrix green on the
+  # tagged commit before publishing.
+  workflow_call:
 
 env:
   # rcodesign (https://github.com/indygreg/apple-platform-rs) generates the
