@@ -41,6 +41,24 @@ jobs:
           name: prebuilt-shims
           path: src/obj/shim/
 
+  # Run the Zig shim unit tests against the pinned toolchain. Encodes the first
+  # item of the ZigVersion bump checklist (docs/zig-version-bump.md) so a bump
+  # that breaks the shims against zig's churning std APIs fails here, on every
+  # PR, rather than in a downstream link. Uses the exact pinned ZigVersion via
+  # the Vezel toolset (see the TestShims target in AotAnywhere.nuproj).
+  shim-tests:
+    runs-on: ubuntu-latest
+    name: Zig shim unit tests
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: zig test the shims
+        run: dotnet build -t:TestShims src/AotAnywhere.nuproj
+
   # Generate a throwaway self-signed Developer ID-style certificate that the
   # build jobs use to exercise the signing integration. Generated once here:
   # rcodesign emits a PEM pair, and Ubuntu's OpenSSL converts it to a PKCS#12

@@ -25,13 +25,21 @@
 // result. It is a .NET file-based app, so run it directly with:
 //
 //   dotnet run eng/generate-apple-sysroot.cs
+//
+// Pass --latest to resolve the newest patch/preview of each pinned lineage from
+// nuget.org instead of the pinned versions (drops the need to hand-bump the
+// pins before checking for drift). The scheduled drift-detection workflow runs
+// this mode and opens a PR when the regenerated stubs differ:
+//
+//   dotnet run eng/generate-apple-sysroot.cs -- --latest
 
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
-await Generator.RunAsync();
+await Generator.RunAsync(args);
 
 static partial class Generator
 {
@@ -138,19 +146,114 @@ static partial class Generator
         return null!;
     }
 
+    static string PackId(string family, string rid) => family == "ilcompiler"
+        ? $"runtime.{rid}.microsoft.dotnet.ilcompiler"
+        : $"microsoft.netcore.app.runtime.nativeaot.{rid}";
+
     // (pack-id, version, arch) triples with their nuget.org download URL.
-    static IEnumerable<(string Pack, string Version, string Rid, string Url)> PackUrls()
+    static IEnumerable<(string Pack, string Version, string Rid, string Url)> PackUrls(
+        (string Family, string[] Versions)[] packVersions)
     {
-        foreach (var (family, versions) in PackVersions)
+        foreach (var (family, versions) in packVersions)
             foreach (var version in versions)
                 foreach (var rid in Rids)
                 {
-                    string pack = family == "ilcompiler"
-                        ? $"runtime.{rid}.microsoft.dotnet.ilcompiler"
-                        : $"microsoft.netcore.app.runtime.nativeaot.{rid}";
+                    string pack = PackId(family, rid);
                     string url = $"https://api.nuget.org/v3-flatcontainer/{pack}/{version}/{pack}.{version}.nupkg";
                     yield return (pack, version, rid, url);
                 }
+    }
+
+    // --- "latest" version resolution (drift detection) ---------------------
+
+    // Replace each pinned version with the newest version nuget.org offers in
+    // the same major and prerelease lineage. A pinned stable 10.0.9 tracks the
+    // newest stable 10.x; a pinned preview 11.0.0-preview.5.* tracks the newest
+    // 11.x preview. This is what the scheduled drift job runs with (--latest):
+    // it surfaces new Apple symbols pulled in by fresh patches/previews without
+    // needing the pinned list to be hand-bumped first. Whole new majors (e.g. a
+    // future net12) are intentionally NOT auto-discovered - that is a deliberate
+    // support decision, handled by editing PackVersions.
+    static async Task<(string Family, string[] Versions)[]> ResolveLatestAsync()
+    {
+        Console.WriteLine("Resolving latest runtime pack versions from nuget.org (--latest):");
+        var resolved = new List<(string, string[])>();
+        foreach (var (family, versions) in PackVersions)
+        {
+            // osx-arm64 and osx-x64 packs ship in lockstep; query one lineage.
+            string pack = PackId(family, "osx-arm64");
+            var available = await FetchIndexVersionsAsync(pack);
+            var picked = new List<string>();
+            foreach (var pinned in versions)
+            {
+                int major = Major(pinned);
+                bool preview = IsPrerelease(pinned);
+                string newest = available
+                    .Where(v => Major(v) == major && IsPrerelease(v) == preview)
+                    .OrderBy(v => v, VersionComparer)
+                    .LastOrDefault() ?? pinned;
+                if (newest != pinned)
+                    Console.WriteLine($"  {pack}: {pinned} -> {newest}");
+                else
+                    Console.WriteLine($"  {pack}: {pinned} (already newest)");
+                picked.Add(newest);
+            }
+            resolved.Add((family, picked.Distinct().ToArray()));
+        }
+        return resolved.ToArray();
+    }
+
+    static async Task<List<string>> FetchIndexVersionsAsync(string pack)
+    {
+        string url = $"https://api.nuget.org/v3-flatcontainer/{pack}/index.json";
+        using var doc = JsonDocument.Parse(await Http.GetStringAsync(url));
+        return doc.RootElement.GetProperty("versions")
+            .EnumerateArray().Select(e => e.GetString()!).ToList();
+    }
+
+    static int Major(string version) =>
+        int.Parse(version.Split('.', 2)[0]);
+
+    static bool IsPrerelease(string version) => version.Contains('-');
+
+    // SemVer-style ordering: compare release parts numerically, a release
+    // outranks any prerelease of the same numbers, and prerelease identifiers
+    // compare dot-by-dot (numeric numerically, otherwise ordinal).
+    static readonly IComparer<string> VersionComparer =
+        Comparer<string>.Create(static (a, b) =>
+        {
+            var (relA, preA) = SplitVersion(a);
+            var (relB, preB) = SplitVersion(b);
+            int n = Math.Max(relA.Length, relB.Length);
+            for (int i = 0; i < n; i++)
+            {
+                int va = i < relA.Length ? relA[i] : 0;
+                int vb = i < relB.Length ? relB[i] : 0;
+                if (va != vb) return va.CompareTo(vb);
+            }
+            if (preA.Length == 0 && preB.Length == 0) return 0;
+            if (preA.Length == 0) return 1;  // release > prerelease
+            if (preB.Length == 0) return -1;
+            int m = Math.Min(preA.Length, preB.Length);
+            for (int i = 0; i < m; i++)
+            {
+                bool na = int.TryParse(preA[i], out int ia);
+                bool nb = int.TryParse(preB[i], out int ib);
+                int c = na && nb ? ia.CompareTo(ib)
+                    : na ? -1 : nb ? 1
+                    : string.CompareOrdinal(preA[i], preB[i]);
+                if (c != 0) return c;
+            }
+            return preA.Length.CompareTo(preB.Length);
+        });
+
+    static (int[] Release, string[] Prerelease) SplitVersion(string version)
+    {
+        int dash = version.IndexOf('-');
+        string release = dash < 0 ? version : version[..dash];
+        string[] pre = dash < 0 ? [] : version[(dash + 1)..].Split('.');
+        int[] rel = release.Split('.').Select(int.Parse).ToArray();
+        return (rel, pre);
     }
 
     // Download a pack (cached) and extract its .a/.o members. Returns a dir.
@@ -344,8 +447,15 @@ static partial class Generator
 
     // --- driver ------------------------------------------------------------
 
-    public static async Task RunAsync()
+    public static async Task RunAsync(string[] args)
     {
+        // --latest: resolve the newest patch/preview of each pinned lineage from
+        // nuget.org instead of the pinned PackVersions (used by the scheduled
+        // drift-detection workflow). Default: use exactly the pinned versions.
+        var packVersions = args.Contains("--latest")
+            ? await ResolveLatestAsync()
+            : PackVersions;
+
         string sdk = SdkPath();
         Console.WriteLine($"SDK: {sdk}");
         string zigTbd = ZigLibSystemTbd();
@@ -365,7 +475,7 @@ static partial class Generator
         // needed = union over packs of (undefined - defined-within-the-same-pack)
         var needed = new HashSet<string>();
         Console.WriteLine("Collecting undefined symbols from runtime packs:");
-        foreach (var (pack, version, rid, url) in PackUrls())
+        foreach (var (pack, version, rid, url) in PackUrls(packVersions))
         {
             string directory = await FetchNativeMembersAsync(pack, version, url);
             var undefined = NmSymbols(directory, "-u");

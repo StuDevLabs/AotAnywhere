@@ -96,7 +96,7 @@ Note that only browser downloads get the quarantine attribute; binaries fetched 
 
 ## Usage
 
-By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](https://github.com/vezel-dev/zig-toolsets) NuGet package. You can specify version of this package using the `ZigVersion` property. Instructions for using your own Zig binaries are near the end of this document.
+By default it relies on Zig provided by the unofficial [Vezel.Zig.Toolsets](https://github.com/vezel-dev/zig-toolsets) NuGet package. You can specify version of this package using the `ZigVersion` property. Instructions for using your own Zig binaries are near the end of this document. (Maintainers: bumping the pinned `ZigVersion` follows the [ZigVersion bump checklist](docs/zig-version-bump.md).)
 
 1. To your project that is already using Native AOT, add a reference to the [`StuDev.AotAnywhere`](https://www.nuget.org/packages/StuDev.AotAnywhere) NuGet package:
 

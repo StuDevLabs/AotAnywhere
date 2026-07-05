@@ -71,10 +71,10 @@
     <ShimTarget Include="linux-arm64" Triple="aarch64-linux-musl" Exe="clang" />
   </ItemGroup>
 
-  <Target Name="BuildClangShims"
-          Inputs="clang_shim.zig;objcopy_shim.zig;@(ShimTarget)"
-          Outputs="@(ShimTarget->'$(ShimIntermediateDir)%(Identity)/%(Exe)')">
-
+  <!-- Resolve the pack-host zig from the Vezel toolset package. Shared by
+       BuildClangShims (cross-compiles the shims) and TestShims (runs the shim
+       unit tests) so both use the exact pinned ZigVersion. -->
+  <Target Name="_ResolveZigForShims">
     <PropertyGroup>
       <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('win-x86'))">$(PkgVezel_Zig_Toolsets_win-x86)/tools</_ZigTools>
       <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('win-x64'))">$(PkgVezel_Zig_Toolsets_win-x64)/tools</_ZigTools>
@@ -89,6 +89,12 @@
 
     <Error Condition="'$(_ZigTools)' == ''"
            Text="No Vezel.Zig.Toolsets package for pack host '$(PackHostRuntimeIdentifier)'. Set PackHostRuntimeIdentifier to a supported host RID." />
+  </Target>
+
+  <Target Name="BuildClangShims"
+          DependsOnTargets="_ResolveZigForShims"
+          Inputs="clang_shim.zig;objcopy_shim.zig;@(ShimTarget)"
+          Outputs="@(ShimTarget->'$(ShimIntermediateDir)%(Identity)/%(Exe)')">
 
     <MakeDir Directories="$(ShimIntermediateDir)%(ShimTarget.Identity)" />
 
@@ -97,6 +103,21 @@
     <Exec Command="&quot;$(_ZigExe)&quot; build-exe -O ReleaseSafe -fstrip -target %(ShimTarget.Triple) -femit-bin=&quot;$(ShimIntermediateDir)%(ShimTarget.Identity)/%(ShimTarget.Exe)&quot; &quot;$(MSBuildProjectDirectory)/clang_shim.zig&quot;" />
 
   </Target>
+
+  <!-- Run the shim unit tests against the pinned zig. Encodes the ZigVersion
+       bump checklist item "zig test the shims" (see docs/zig-version-bump.md):
+       the shim sources must compile and pass with the pinned toolchain, and
+       zig's std APIs churn between releases. Invoked in CI on every PR via
+       `dotnet build -t:TestShims src/AotAnywhere.nuproj`. -->
+  <Target Name="TestShims" DependsOnTargets="_ResolveZigForShims">
+    <Message Importance="high" Text="zig test %(ShimSource.Identity) (zig $(ZigVersion))" />
+    <Exec Command="&quot;$(_ZigExe)&quot; test &quot;$(MSBuildProjectDirectory)/%(ShimSource.Identity)&quot;" />
+  </Target>
+
+  <ItemGroup>
+    <ShimSource Include="clang_shim.zig" />
+    <ShimSource Include="objcopy_shim.zig" />
+  </ItemGroup>
 
   <!-- Register the shims for packing in a separate, always-run target: doing it
        inside BuildClangShims would drop them from the package whenever that
