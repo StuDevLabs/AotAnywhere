@@ -1,25 +1,25 @@
 # AotAnywhere
 
-This is a NuGet package with an MSBuild target to aid in crosscompilation with [PublishAot](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/). It helps resolving following error:
+This is a NuGet package with an MSBuild target to aid in crosscompilation with [PublishAot](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/). It helps resolve the following error:
 
 ```sh
 $ dotnet publish -r linux-x64
 Microsoft.NETCore.Native.Publish.targets(59,5): error : Cross-OS native compilation is not supported.
 ```
 
-This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroot to allow crosscompiling to linux-x64/linux-arm64/linux-arm/linux-musl-x64/linux-musl-arm64/linux-musl-arm from Windows and macOS machines.
+This NuGet package allows using [Zig](https://ziglang.org/) as the linker/sysroot to allow crosscompiling to linux-x64/linux-arm64/linux-arm/linux-musl-x64/linux-musl-arm64/linux-musl-arm as well as osx-x64/osx-arm64 from Windows, macOS, and Linux machines.
 
 ## Supported Host Platforms
 
 - **Windows** (x86, x64)
-- **macOS** (x64, arm64)  
+- **macOS** (x64, arm64)
 - **Linux** (x64, arm64)
 
 > Windows on ARM64 is not currently supported as a host: zig 0.16's aarch64-windows code generation produces a `clang` shim that crashes at startup, so cross-compilation can't run there. This will be revisited when a newer Zig fixes it.
 
 ## Supported Target Platforms
 
-- **Linux** (x64, arm64, glibc, musl) - Full support from all host platforms
+- **Linux** (x64, arm64, arm/ARMv7, glibc, musl) - Full support from all host platforms (the arm/ARMv7 targets require a `net9.0`+ target framework; see [Usage](#usage))
 - **macOS** (x64, arm64) - Cross-compilation using Apple linker stubs bundled with the package (see below)
 
 ### macOS Cross-Compilation
