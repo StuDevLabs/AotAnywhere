@@ -25,6 +25,7 @@
 //! target .NET ships runtime packs for (x64 and arm64, glibc and musl).
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 
 // --- Command line ------------------------------------------------------------
@@ -153,8 +154,6 @@ fn readFile(arena: Allocator, io: std.Io, path: []const u8) []u8 {
 /// keeps the executable bit intact on in-place strips.
 fn writeFile(arena: Allocator, io: std.Io, path: []const u8, data: []const u8, mode_source: []const u8) void {
     const cwd = std.Io.Dir.cwd();
-    const source_stat = cwd.statFile(io, mode_source, .{}) catch |err|
-        fatal(io, "cannot stat '{s}': {s}", .{ mode_source, @errorName(err) });
 
     const tmp_path = std.fmt.allocPrint(arena, "{s}.aotanywhere-tmp", .{path}) catch
         fatal(io, "out of memory", .{});
@@ -162,8 +161,17 @@ fn writeFile(arena: Allocator, io: std.Io, path: []const u8, data: []const u8, m
     writeAll(io, tmp_path, data) catch |err|
         fatal(io, "cannot write '{s}': {s}", .{ tmp_path, @errorName(err) });
 
-    cwd.setFilePermissions(io, tmp_path, source_stat.permissions, .{}) catch |err|
-        fatal(io, "cannot set permissions on '{s}': {s}", .{ tmp_path, @errorName(err) });
+    // Carry the source's executable bit over to the rewritten binary. Windows
+    // has no POSIX permission bits (and zig 0.16's std has no
+    // dirSetFilePermissions there, so calling it panics); skip it, since the
+    // ELF outputs are marked executable by the publish pipeline on Linux.
+    if (builtin.os.tag != .windows) {
+        const source_stat = cwd.statFile(io, mode_source, .{}) catch |err|
+            fatal(io, "cannot stat '{s}': {s}", .{ mode_source, @errorName(err) });
+        cwd.setFilePermissions(io, tmp_path, source_stat.permissions, .{}) catch |err|
+            fatal(io, "cannot set permissions on '{s}': {s}", .{ tmp_path, @errorName(err) });
+    }
+
     cwd.rename(tmp_path, cwd, path, io) catch |err|
         fatal(io, "cannot rename '{s}' to '{s}': {s}", .{ tmp_path, path, @errorName(err) });
 }

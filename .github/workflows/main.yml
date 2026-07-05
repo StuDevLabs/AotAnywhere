@@ -75,7 +75,7 @@ jobs:
           # the strip actually happened, then run it.
           readelf -S "$bin" > sections.txt
           grep -q '\.gnu_debuglink' sections.txt
-          ! grep -qE '\.symtab|\.debug_info' sections.txt
+          if grep -qE '\.symtab|\.debug_info' sections.txt; then echo "strip failed: symbol/debug sections still present" >&2; exit 1; fi
           echo "Launching $bin"
           chmod +x "$bin"
           "$bin"
