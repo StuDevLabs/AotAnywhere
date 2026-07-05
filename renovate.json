@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Bump the ZigVersion (Vezel.Zig.Toolsets) pin in both files that must stay in sync",
+      "managerFilePatterns": [
+        "/^src/Crosscompile\\.targets$/",
+        "/^src/AotAnywhere\\.nuproj$/"
+      ],
+      "matchStrings": [
+        "<ZigVersion[^>]*>(?<currentValue>[^<]+)</ZigVersion>"
+      ],
+      "datasourceTemplate": "nuget",
+      "depNameTemplate": "Vezel.Zig.Toolsets.linux-x64"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchPackageNames": [
+        "Vezel.Zig.Toolsets.linux-x64"
+      ],
+      "groupName": "ZigVersion",
+      "commitMessageTopic": "ZigVersion (Zig toolchain)",
+      "prBodyNotes": [
+        ":warning: Zig releases change behaviour relevant to this package. Work through the **[ZigVersion bump checklist](docs/zig-version-bump.md)** before merging — in particular the win-arm64 codegen and `zig objcopy` re-checks that a green CI run cannot prove."
+      ]
+    }
+  ]
+}

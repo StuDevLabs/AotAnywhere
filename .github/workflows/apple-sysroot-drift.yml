@@ -1,0 +1,114 @@
+name: Apple sysroot drift
+
+# The bundled Apple linker stubs (src/apple-sysroot) cover exactly the symbols
+# the pinned .NET runtime packs reference. When a newer runtime pack references
+# a new Apple symbol, cross-compiled macOS links fail with an unresolved symbol
+# until the stubs are regenerated. This scheduled job catches that drift before
+# a user hits it: it regenerates the stubs against the *latest* stable + preview
+# packs and opens a PR when they differ, and separately canary-publishes for
+# osx-arm64 against the newest preview SDK so a genuine symbol gap turns the run
+# red even if the generator missed it.
+
+on:
+  schedule:
+    # Weekly, Monday 06:00 UTC. Runtime packs ship far less often than this.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # Regenerate the stubs from the newest packs and open a PR on drift. Must run
+  # on macOS: the generator drives xcrun/nm and the local SDK's .tbd files.
+  drift:
+    runs-on: macos-latest
+    name: Regenerate stubs and check for drift
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+
+      # .NET 10 SDK: the generator is a file-based app (dotnet run <file>.cs),
+      # which needs the .NET 10+ SDK.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      # The generator drops symbols that zig's bundled libSystem stub already
+      # resolves, so the zig here must be the same upstream release the package
+      # ships (ZigVersion 0.16.0.2 in Crosscompile.targets == upstream 0.16.0).
+      # Keep this pinned version in step with ZigVersion on every bump.
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Regenerate Apple sysroot stubs (latest packs)
+        run: dotnet run eng/generate-apple-sysroot.cs -- --latest
+
+      - name: Check for drift
+        id: diff
+        run: |
+          if git diff --quiet -- src/apple-sysroot; then
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            echo "No stub drift: the bundled stubs already cover the latest packs." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Apple sysroot stub drift detected :warning:"
+              echo ""
+              echo "The latest runtime packs reference symbols the bundled stubs do not."
+              echo '```diff'
+              git diff -- src/apple-sysroot
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open pull request with regenerated stubs
+        if: steps.diff.outputs.drift == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/apple-sysroot-drift
+          commit-message: Regenerate Apple sysroot stubs for latest runtime packs
+          title: Regenerate Apple sysroot stubs (drift detected)
+          labels: automation
+          add-paths: src/apple-sysroot
+          body: |
+            The scheduled **Apple sysroot drift** job regenerated the bundled
+            linker stubs against the *latest* stable and preview runtime packs
+            (`--latest`) and they differ from what is checked in — a newer pack
+            references an Apple symbol the current stubs do not cover.
+
+            Review the diff, then consider bumping the pinned versions in
+            `PackVersions` (`eng/generate-apple-sysroot.cs`) to match, so a plain
+            `dotnet run eng/generate-apple-sysroot.cs` reproduces this output.
+
+  # Canary: publish the sample app for osx-arm64 against the newest preview SDK.
+  # A missing Apple symbol surfaces here as a link failure even if the generator
+  # above did not flag it. Targets the newest preview TFM so the newest preview
+  # ILCompiler pack is exercised; bump both when a new preview major ships.
+  canary:
+    runs-on: macos-latest
+    name: Canary publish (osx-arm64, newest preview SDK)
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+
+      - name: Setup .NET (newest preview)
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: preview
+
+      - name: Publish Hello for osx-arm64
+        run: |
+          dotnet publish test/Hello.csproj \
+            -r osx-arm64 \
+            -c Release \
+            -p:TargetFramework=net11.0 \
+            -p:StripSymbols=false \
+            -p:InvariantGlobalization=true \
+            --output artifacts/osx-arm64
+          test -f artifacts/osx-arm64/Hello
