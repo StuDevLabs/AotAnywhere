@@ -1,0 +1,22 @@
+<Project>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+
+  <PropertyGroup>
+    <!-- Shared-library coverage for the link flows: NativeLib=Shared takes
+         different SDK linker arguments than an executable (-shared, the
+         net8 -Wl,-e0x0 null entry point, the exports version-script, the
+         post-link chmod 644). net8.0 keeps it on the package's supported
+         floor, which is also the spelling-sensitive case for the entry
+         point argument. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <!-- CI relocates BaseIntermediateOutputPath, which silently un-excludes
+         ./obj from the implicit globs; keep local build dirs out. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+
+  <Import Project="../../src/StuDev.AotAnywhere.targets" />
+</Project>

@@ -3,6 +3,12 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- HelloLib is its own project; keep it out of this project's implicit
+         globs (CI publishes both from the shared test/ tree). The local
+         obj/bin also need explicit excludes: CI and local runs relocate
+         BaseIntermediateOutputPath, which silently un-excludes ./obj, and a
+         stale AssemblyInfo.cs in there fails the build with CS0579. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);HelloLib/**;obj/**;bin/**</DefaultItemExcludes>
     <!-- net8.0 is the package's supported floor. The armv7 targets publish as
          net9.0 instead: their ILCompiler runtime packs only ship for .NET 9+,
          and net8.0 fails restore for those RIDs outright (NETSDK1203) - which
@@ -15,6 +21,14 @@
          floor with the older shape. -->
     <TargetFramework Condition="'$(RuntimeIdentifier)' == 'win-arm64'">net10.0</TargetFramework>
     <PublishAot>true</PublishAot>
+
+    <!-- Selftest publishes (see Program.cs) exercise real ICU, zlib and
+         OpenSSL. They pin net10.0: the compression path needs the bundled
+         zlib-ng - on net8 both link flows drop -lz, so referencing
+         GZipStream must stay out of the default (net8-floor) binaries,
+         which the SELFTEST define guarantees. -->
+    <TargetFramework Condition="'$(AotAnywhereSelfTest)' == 'true'">net10.0</TargetFramework>
+    <DefineConstants Condition="'$(AotAnywhereSelfTest)' == 'true'">$(DefineConstants);SELFTEST</DefineConstants>
   </PropertyGroup>
 
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
