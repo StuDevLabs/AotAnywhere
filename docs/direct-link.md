@@ -49,19 +49,22 @@ whether to go further down this road:
   date and skips itself. (The test harness imports `src/` targets *after*
   `Sdk.targets` — the opposite order — so only order-independent mechanisms
   like this one behave the same in both.)
-- **The shim is referenced by absolute path, not PATH.**
+- **The shim is referenced by absolute path off Windows, by PATH on it.**
   `SetupOSSpecificProps` probes `command -v "$(CppLinker)"` (and the same for
   the objcopy symbol stripper; `where /Q` on Windows hosts) and errors when
-  the tool is missing, before we ever run. Both `command -v` and `where /Q`
-  accept an absolute path — `where C:\dir\tool.exe` searches `C:\dir` for
-  `tool.exe` directly — so `PointLinkerToShim` sets `CppLinker` (Linux and
-  macOS targets) and `ObjCopyName` (Linux) to the materialized shim's
+  the tool is missing, before we ever run. `command -v` accepts an absolute
+  path, so on non-Windows hosts `PointLinkerToShim` sets `CppLinker` (Linux
+  and macOS targets) and `ObjCopyName` (Linux) to the materialized shim's
   absolute path and the probes resolve without the shim's directory on PATH.
-  This retired the shim PATH prepend on every host. (An earlier note here
-  assumed `where /Q` rejected absolute paths; it does not.) Windows targets
-  are unaffected: win-cross already points `CppLinker` at the link shim by
-  absolute path in `OverwriteTargetTriple` and runs no PATH probe, and a
-  Windows host links win-* natively without importing the package.
+  `where /Q` does **not**: it reads the drive-letter colon in an absolute
+  path as its own `path:pattern` delimiter and fails with `Invalid pattern is
+  specified in "path:pattern"`, so on Windows hosts the shim must be found by
+  bare name with its directory prepended to PATH, as before. Eliminating the
+  PATH prepend on Windows too would need a linker resolvable by a
+  colon-free name — out of scope here. Windows *targets* are handled either
+  way: win-cross already points `CppLinker` at the link shim by absolute path
+  in `OverwriteTargetTriple` and runs no PATH probe, and a Windows host links
+  win-* natively without importing the package.
 - **The `-fuse-ld=lld` linker-version probe never fires for Linux.** The SDK
   defaults `LinkerFlavor` to `bfd` there, so `_LinkerVersion` stays unset and
   the SDK's `sections.ld` (`KEEP(*(__modules))`) path never applies; module
@@ -112,9 +115,11 @@ Bake coverage beyond Hello World, in both flows for A/B parity:
   cannot do).
 - It is the stepping stone to invoking zig without any PATH/environment
   mutation. The `SetupOSSpecificProps` linker/objcopy probes are now
-  satisfied by absolute path (`PointLinkerToShim`), so the shim's PATH
-  prepend is gone; only zig itself remains on PATH, because the shim still
-  execs `zig` by bare name.
+  satisfied by absolute path on non-Windows hosts (`PointLinkerToShim`), so
+  the shim's PATH prepend is gone there; Windows hosts still prepend it
+  (their `where /Q` probe cannot take an absolute path), and zig itself
+  remains on PATH on every host, because the shim still execs `zig` by bare
+  name.
 
 ## Not covered (future work, if the experiment earns it)
 
@@ -123,10 +128,12 @@ Bake coverage beyond Hello World, in both flows for A/B parity:
   translation, MinGW glue, `/MERGE` COFF renames — all link-shim logic).
 - `NativeLib=Static` (the SDK uses `ar` via `CppLibCreator`; untouched —
   the direct-link target conditions itself out and the SDK flow applies).
-- Removing the remaining zig PATH prepend (the shim execs `zig` by bare
-  name; giving it zig's absolute path — e.g. via an env channel or argv —
-  would let `SetPathToZig` drop the prepend) and the
-  `AOTANYWHERE_APPLE_SYSROOT` process-environment channel.
+- Removing the remaining PATH prepends: the zig one (the shim execs `zig` by
+  bare name; giving it zig's absolute path — e.g. via an env channel or argv
+  — would let `SetPathToZig` drop the prepend) on every host, and the shim
+  one still needed on Windows hosts (whose `where /Q` probe rejects an
+  absolute path). Plus the `AOTANYWHERE_APPLE_SYSROOT` process-environment
+  channel.
 - `StaticICULinking`/`StaticOpenSslLinking` invoke `build-local.sh` with
   `CC=$(CppLinker)`, now the shim's absolute path (`PointLinkerToShim`);
   they keep working because the shim forwards compile-only invocations

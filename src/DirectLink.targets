@@ -26,11 +26,11 @@
 
        Scope: Linux targets (glibc and musl), executables and shared
        libraries. Other RIDs keep the shim flow.
-       SetupOSSpecificProps' linker probes still resolve the clang shim, but
-       by absolute path now (see PointLinkerToShim) rather than a PATH
-       prepend, so the shim materialization is unchanged; the objcopy
-       personality also still performs the symbol strip (zig cannot strip
-       ELF), invoked here by absolute path. -->
+       SetupOSSpecificProps' linker probes still resolve the clang shim -
+       by absolute path on non-Windows hosts, or via PATH on Windows hosts
+       (see PointLinkerToShim) - so the shim materialization is unchanged;
+       the objcopy personality also still performs the symbol strip (zig
+       cannot strip ELF), invoked here by absolute path. -->
 
   <PropertyGroup>
     <_AotAnywhereDirectLinkActive>false</_AotAnywhereDirectLinkActive>
