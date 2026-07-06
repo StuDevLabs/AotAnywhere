@@ -68,7 +68,21 @@ Alpine for musl); stripped output with `.dbg` sidecar and `.gnu_debuglink`
 identical in shape to the shim flow; `LinkNative` confirmed skipping via
 binlog; incremental republish behaves like the shim flow. CI publishes
 `linux-x64-direct` from every host and runs it on the ubuntu-x64 validate
-job.
+job; the Windows-host leg (cmd.exe Exec quoting) passed on the first run.
+
+Bake coverage beyond Hello World, in both flows for A/B parity:
+
+- **Shared libraries** (`test/HelloLib`, `NativeLib=Shared`, net8): both
+  flows produced byte-identical `.so` files (same build id), loaded and
+  called via ctypes. This surfaced a pre-existing package bug — lld (16+)
+  errors on version-script symbols that are not defined (`_init`/`_fini`
+  from ILC's generated exports), where GNU ld tolerates them, so net8
+  shared libraries never linked through zig at all. Both flows now add
+  `-Wl,--undefined-version` whenever a version script is used.
+- **Non-trivial app** (`--selftest`, net10, no InvariantGlobalization):
+  exercises real ICU (tr-TR casing), zlib (GZip roundtrip through the
+  bundled zlib-ng) and OpenSSL (RSA sign/verify) at run time. Both flows
+  pass in a `runtime-deps` container and on the ubuntu-x64 CI runner.
 
 ## Why bother / what this buys
 
@@ -87,7 +101,8 @@ job.
 - macOS targets (Apple sysroot flags, pad file, swift overlay libs — all
   currently clang-shim logic) and Windows targets (the MSVC `link.rsp`
   translation, MinGW glue, `/MERGE` COFF renames — all link-shim logic).
-- `NativeLib=Static` (the SDK uses `ar` via `CppLibCreator`; untouched).
+- `NativeLib=Static` (the SDK uses `ar` via `CppLibCreator`; untouched —
+  the direct-link target conditions itself out and the SDK flow applies).
 - Removing the PATH prepends and the `AOTANYWHERE_APPLE_SYSROOT`
   process-environment channel.
 - `StaticICULinking`/`StaticOpenSslLinking` invoke `build-local.sh` with

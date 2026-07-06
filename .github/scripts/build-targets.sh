@@ -53,30 +53,47 @@ for target in "${TARGET_ARRAY[@]}"; do
   # would not survive the bash -> dotnet boundary.
   obj_dir="$RUNNER_TEMP/aot-obj/$target/"
 
-  # A "<rid>-direct" pseudo-target publishes that RID with the experimental
-  # AotAnywhereDirectLink flag (zig invoked directly instead of through the
-  # clang shim). The artifact directory keeps the suffixed name, so the
-  # validate job runs both flavors of the binary.
+  # Pseudo-target decorations select publish variants of the same RID; the
+  # artifact directory keeps the decorated name so the validate job can
+  # exercise each variant:
+  #   <rid>-direct   - the experimental AotAnywhereDirectLink flag (zig is
+  #                    invoked directly instead of through the clang shim)
+  #   lib-<rid>      - test/HelloLib, a NativeLib=Shared library
+  #   <rid>-selftest - Hello with AotAnywhereSelfTest=true: net10.0 and real
+  #                    ICU (no InvariantGlobalization), zlib and OpenSSL
+  #                    exercised at run time via --selftest
   rid="$target"
   direct_args=()
-  if [[ "$target" == *-direct ]]; then
-    rid="${target%-direct}"
+  if [[ "$rid" == *-direct ]]; then
+    rid="${rid%-direct}"
     direct_args=("-p:AotAnywhereDirectLink=true")
   fi
 
+  project="test/Hello.csproj"
+  binary_base="Hello"
+  variant_args=("-p:InvariantGlobalization=true")
+  if [[ "$rid" == lib-* ]]; then
+    rid="${rid#lib-}"
+    project="test/HelloLib/HelloLib.csproj"
+    binary_base="HelloLib"
+  elif [[ "$rid" == *-selftest ]]; then
+    rid="${rid%-selftest}"
+    variant_args=("-p:AotAnywhereSelfTest=true")
+  fi
+
   # Determine if this is a cross-compilation or native build
-  if [[ "$target" == linux-* ]]; then
+  if [[ "$rid" == linux-* ]]; then
     echo "Cross-compiling to Linux target using AotAnywhere..."
     # Deliberately no StripSymbols override: it defaults to true
     # for Linux targets and is served by the shim's llvm-objcopy
     # personality, so this exercises the strip pipeline on every
     # host x target combination.
     publish_log="/tmp/publish-$group_id-$target.log"
-    if dotnet publish test/Hello.csproj \
+    if dotnet publish "$project" \
       -r "$rid" \
       ${direct_args[@]+"${direct_args[@]}"} \
+      ${variant_args[@]+"${variant_args[@]}"} \
       -c Release \
-      -p:InvariantGlobalization=true \
       -p:BaseIntermediateOutputPath="$obj_dir" \
       --output "artifacts/$host_name/$target" 2>&1 | tee "$publish_log"; then
 
@@ -95,7 +112,7 @@ for target in "${TARGET_ARRAY[@]}"; do
       echo "❌ Cross-compilation build failed for $target"
       build_result="failed"
     fi
-  elif [[ "$target" == osx-* ]]; then
+  elif [[ "$rid" == osx-* ]]; then
     echo "Cross-compiling to macOS target using AotAnywhere..."
     # osx-x64 is signed with the throwaway CI certificate to
     # exercise the rcodesign signing integration from every host;
@@ -130,7 +147,7 @@ for target in "${TARGET_ARRAY[@]}"; do
       echo "❌ Cross-compilation build failed for $target"
       build_result="failed"
     fi
-  elif [[ "$target" == win-* ]]; then
+  elif [[ "$rid" == win-* ]]; then
     echo "Publishing Windows target..."
     # On Windows hosts the SDK links win-* natively with MSVC and the
     # package stays inert - which is itself worth validating. On Linux and
@@ -155,8 +172,9 @@ for target in "${TARGET_ARRAY[@]}"; do
 
   # Verify the binary was created (if build was successful)
   if [[ "$build_result" == "success" ]]; then
-    binary_name="Hello"
-    [[ "$target" == win-* ]] && binary_name="Hello.exe"
+    binary_name="$binary_base"
+    [[ "$rid" == win-* ]] && binary_name="$binary_base.exe"
+    [[ "$rid" == linux-* && "$binary_base" == "HelloLib" ]] && binary_name="$binary_base.so"
 
     if [ -f "artifacts/$host_name/$target/$binary_name" ]; then
       echo "✅ Binary confirmed: $binary_name for $target"
@@ -174,12 +192,12 @@ for target in "${TARGET_ARRAY[@]}"; do
       echo "Binary size: ${size_kb}KB"
 
       # Assert the strip pipeline ran for Linux targets: the
-      # publish must produce the Hello.dbg symbol sidecar.
-      if [[ "$target" == linux-* ]]; then
-        if [ -f "artifacts/$host_name/$target/Hello.dbg" ]; then
-          echo "✅ Symbol sidecar check: Hello.dbg present"
+      # publish must produce the .dbg symbol sidecar.
+      if [[ "$rid" == linux-* ]]; then
+        if [ -f "artifacts/$host_name/$target/$binary_name.dbg" ]; then
+          echo "✅ Symbol sidecar check: $binary_name.dbg present"
         else
-          echo "❌ Symbol sidecar check: Hello.dbg missing (StripSymbols pipeline did not run)"
+          echo "❌ Symbol sidecar check: $binary_name.dbg missing (StripSymbols pipeline did not run)"
           build_success=false
         fi
       fi
@@ -187,7 +205,7 @@ for target in "${TARGET_ARRAY[@]}"; do
       # Assert the PDB made it to the publish output for Windows targets:
       # copied by the SDK on Windows hosts and by the package's
       # AotAnywhereCopyWindowsPdb target on cross hosts.
-      if [[ "$target" == win-* ]]; then
+      if [[ "$rid" == win-* ]]; then
         if [ -f "artifacts/$host_name/$target/Hello.pdb" ]; then
           echo "✅ Symbol sidecar check: Hello.pdb present"
         else

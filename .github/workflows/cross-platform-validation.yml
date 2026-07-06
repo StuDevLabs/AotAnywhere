@@ -167,7 +167,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/nuget
-          key: nuget-publish-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/AotAnywhere.nuproj', 'src/Crosscompile.targets', 'test/Hello.csproj') }}
+          key: nuget-publish-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/AotAnywhere.nuproj', 'src/Crosscompile.targets', 'test/Hello.csproj', 'test/HelloLib/HelloLib.csproj') }}
           restore-keys: |
             nuget-publish-${{ runner.os }}-${{ runner.arch }}-
 
@@ -233,30 +233,36 @@ jobs:
       # the implicit wait after the whole group finishes, so every target
       # still gets attempted and uploaded.
       - parallel:
+          # The extra linux-x64 variants are spread across the groups to keep
+          # the four streams balanced at 4/3/4/4:
+          #   linux-x64-selftest[-direct]  - net10.0, real ICU/zlib/OpenSSL,
+          #                                  exercised at run time
+          #   lib-linux-x64[-direct]       - NativeLib=Shared library
+          #   linux-x64-direct             - plain exe, direct zig link
+          # The -direct variants publish with the experimental
+          # AotAnywhereDirectLink flag (zig invoked directly instead of
+          # through the clang shim); the others cover the same scenarios
+          # through the established shim flow for A/B parity.
           - name: Build glibc Linux targets
             shell: bash
             env:
               ZIG_SHIM_DEBUG: "1"
-            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "linux-x64,linux-arm64,linux-arm"
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "linux-x64,linux-arm64,linux-arm,linux-x64-selftest"
           - name: Build musl Linux targets
             shell: bash
             env:
               ZIG_SHIM_DEBUG: "1"
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "linux-musl-x64,linux-musl-arm64,linux-musl-arm"
-          - name: Build macOS targets
+          - name: Build macOS targets and linux shared libraries
             shell: bash
             env:
               ZIG_SHIM_DEBUG: "1"
-            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "osx-x64,osx-arm64"
-          # linux-x64-direct rides in this group (the lightest one, keeping
-          # the four streams balanced at 3/3/2+1/3): it republishes linux-x64
-          # with the experimental AotAnywhereDirectLink flag, which links by
-          # invoking zig directly instead of through the clang shim.
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "osx-x64,osx-arm64,lib-linux-x64,lib-linux-x64-direct"
           - name: Build Windows targets and direct-link linux-x64
             shell: bash
             env:
               ZIG_SHIM_DEBUG: "1"
-            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "win-x64,win-arm64,linux-x64-direct"
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "win-x64,win-arm64,linux-x64-direct,linux-x64-selftest-direct"
 
 
       - name: Upload build artifacts
@@ -275,11 +281,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Test x64 binaries on Ubuntu x64 (linux-x64-direct is the same RID
-          # published with the experimental AotAnywhereDirectLink flag)
+          # Test x64 binaries on Ubuntu x64. The decorated linux-x64 variants
+          # cover the direct-link flag (-direct), the shared library (lib-)
+          # loaded via ctypes, and the selftest binary (real ICU, zlib,
+          # OpenSSL) run natively on the runner - each in both link flows.
           - runner: ubuntu-latest
             runner-name: ubuntu-x64
-            test-targets: "linux-x64,linux-musl-x64,linux-x64-direct"
+            test-targets: "linux-x64,linux-musl-x64,linux-x64-direct,lib-linux-x64,lib-linux-x64-direct,linux-x64-selftest,linux-x64-selftest-direct"
             host-sources: "windows,linux,macos-x64,macos-arm64,linux-arm64"
           # Test ARM64 binaries on Ubuntu ARM64 (now runnable on hosted ARM runners)
           - runner: ubuntu-24.04-arm
@@ -370,14 +378,15 @@ jobs:
           # armv7 binaries execute inside arm/v7 containers via the QEMU
           # binfmt handlers registered above; everything else runs natively.
           # Emulation is slow, so the container path gets a longer timeout.
+          # Arguments after the binary path are passed through to it.
           run_binary() {
             if [[ "${{ matrix.qemu }}" == "true" ]]; then
               local image="debian:bookworm-slim"
               [[ "$1" == */linux-musl-*/* ]] && image="alpine:3.21"
               timeout 120s docker run --rm --platform linux/arm/v7 \
-                -v "$PWD:/work" -w /work "$image" "/work/$1"
+                -v "$PWD:/work" -w /work "$image" "/work/$1" "${@:2}"
             else
-              run_with_timeout "$1"
+              run_with_timeout "$@"
             fi
           }
           
@@ -404,6 +413,7 @@ jobs:
             for target in "${TARGET_ARRAY[@]}"; do
               binary_name="Hello"
               [[ "$target" == win-* ]] && binary_name="Hello.exe"
+              [[ "$target" == lib-* ]] && binary_name="HelloLib.so"
               binary_path="binaries-$host/$target/$binary_name"
               skip_file="binaries-$host/$target/SKIPPED.txt"
               
@@ -455,7 +465,7 @@ jobs:
               # personality (StripSymbols defaults to true). Check that
               # binutils can parse the rewritten section table, the debug
               # link is in place and the symbol/debug sections are gone.
-              if [[ "$target" == linux-* ]] && command -v readelf >/dev/null 2>&1; then
+              if [[ ( "$target" == linux-* || "$target" == lib-linux-* ) ]] && command -v readelf >/dev/null 2>&1; then
                 echo -n "  Strip check: "
                 if ! readelf -S "$binary_path" > /tmp/sections.txt 2>&1; then
                   echo "❌ FAIL - readelf could not parse the binary"
@@ -472,12 +482,35 @@ jobs:
                 echo "✅ stripped, debuglink present"
               fi
 
+              # Shared libraries cannot be executed; load them and call the
+              # hello_add export via ctypes instead.
+              if [[ "$target" == lib-* ]]; then
+                echo -n "  Load test: "
+                if output=$(python3 -c "import ctypes, sys; lib = ctypes.CDLL(sys.argv[1]); lib.hello_add.restype = ctypes.c_int; lib.hello_add.argtypes = [ctypes.c_int, ctypes.c_int]; print('sum', lib.hello_add(2, 3))" "$PWD/$binary_path" 2>&1) && [[ "$output" == "sum 5" ]]; then
+                  echo "✅ SUCCESS - hello_add(2,3) = 5"
+                  success_count=$((success_count + 1))
+                else
+                  echo "❌ FAIL - $output"
+                fi
+                echo ""
+                continue
+              fi
+
+              # The selftest variants exercise real ICU, zlib and OpenSSL at
+              # run time; everything else prints Hello World.
+              expected_output="Hello World"
+              run_args=()
+              if [[ "$target" == *-selftest* ]]; then
+                expected_output="selftest ok"
+                run_args=(--selftest)
+              fi
+
               # Try to run the binary with timeout
               echo -n "  Execution test: "
-              if run_binary "$binary_path" > /tmp/output.txt 2>&1; then
+              if run_binary "$binary_path" ${run_args[@]+"${run_args[@]}"} > /tmp/output.txt 2>&1; then
                 # tr strips the \r that Windows console output leaves in the line.
                 output=$(tr -d '\r' < /tmp/output.txt)
-                if [[ "$output" == "Hello World" ]]; then
+                if [[ "$output" == "$expected_output" ]]; then
                   echo "✅ SUCCESS - Output: '$output'"
                   success_count=$((success_count + 1))
                 else

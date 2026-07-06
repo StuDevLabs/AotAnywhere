@@ -225,6 +225,17 @@ fn processLinux(gpa: std.mem.Allocator, out: *Args, args: []const []const u8) !v
     // Works around the zig linker dropping necessary parts of the executable.
     try out.append(gpa, "-Wl,-u,__Module");
 
+    // lld (16+) errors on version-script symbols that are not defined, where
+    // GNU ld tolerates them; ILC's generated exports file assigns _init and
+    // _fini, which zig's shared-library link does not define. Restore GNU
+    // ld's behavior whenever a version script is in play.
+    for (args) |arg| {
+        if (std.mem.startsWith(u8, arg, "-Wl,--version-script=")) {
+            try out.append(gpa, "-Wl,--undefined-version");
+            break;
+        }
+    }
+
     for (args) |arg| {
         // zlib is not available with zig; -pie/-Wl,-e0x0 are unsupported.
         if (matchesAny(arg, &.{ "-lz", "-pie", "-Wl,-pie", "-Wl,-e0x0" })) continue;
@@ -427,6 +438,23 @@ test "linux filtering" {
     });
     try expectArgs(&.{
         "-Wl,-u,__Module", "-o", "out dir/hello", "--as-needed", "-Wl,-rpath,$ORIGIN", "main.o",
+    }, out.items);
+}
+
+test "linux version script gets --undefined-version" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var out: Args = .empty;
+    try processLinux(arena, &out, &.{
+        "-Wl,--version-script=obj/HelloLib.exports", "-shared", "-o", "HelloLib.so", "main.o",
+    });
+    try expectArgs(&.{
+        "-Wl,-u,__Module",                           "-Wl,--undefined-version",
+        "-Wl,--version-script=obj/HelloLib.exports", "-shared",
+        "-o",                                        "HelloLib.so",
+        "main.o",
     }, out.items);
 }
 

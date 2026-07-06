@@ -74,6 +74,12 @@
       <_AotAnywhereLinkArg Include="-o &quot;$(NativeBinary)&quot;" />
       <_AotAnywhereLinkArg Include="-Wl,--version-script=&quot;$(ExportsFile)&quot;" Condition="'$(ExportsFile)' != ''" />
       <_AotAnywhereLinkArg Include="-Wl,--export-dynamic" Condition="'$(ExportsFile)' != ''" />
+      <!-- lld (16+) errors on version-script symbols that are not defined,
+           where GNU ld tolerates them; ILC's generated exports assign
+           _init/_fini, which zig's shared-library link does not define.
+           This restores GNU ld's behavior (the clang shim applies the same
+           fixup). -->
+      <_AotAnywhereLinkArg Include="-Wl,--undefined-version" Condition="'$(ExportsFile)' != ''" />
       <_AotAnywhereLinkArg Include="@(LinkerArg)" Exclude="@(_AotAnywhereDroppedLinkerArg)" />
       <_AotAnywhereLinkArg Include="-Wl,--discard-all" />
       <_AotAnywhereLinkArg Include="-Wl,--gc-sections" />

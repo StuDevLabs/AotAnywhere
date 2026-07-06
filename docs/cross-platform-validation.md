@@ -37,6 +37,14 @@ strategy:
       # macos-15-intel and macos-latest hosts
 ```
 
+Beyond the plain RIDs, every host also publishes decorated `linux-x64` variants
+(see `build-targets.sh`): `linux-x64-direct` (the experimental
+`AotAnywhereDirectLink` flag), `lib-linux-x64[-direct]` (a `NativeLib=Shared`
+library, loaded and called via python ctypes during validation) and
+`linux-x64-selftest[-direct]` (a net10.0 build exercising real ICU, zlib and
+OpenSSL at run time via `--selftest`). The `-direct`/non-direct pairs give A/B
+parity between the shim and direct link flows.
+
 ### 2. Build Process
 For each host-target combination:
 - Sets up .NET 8.0
