@@ -148,7 +148,7 @@
           Outputs="$(ClangShimBinary);$(ObjCopyShimBinary);$(LinkShimBinary)">
 
     <MakeDir Directories="$(ClangShimDir)" />
-    <Exec Command="zig build-exe -O ReleaseSafe -femit-bin=&quot;$(ClangShimBinary)&quot; &quot;$(ClangShimSource)&quot;" />
+    <Exec Command="&quot;$(_AotAnywhereZigExe)&quot; build-exe -O ReleaseSafe -femit-bin=&quot;$(ClangShimBinary)&quot; &quot;$(ClangShimSource)&quot;" />
     <Copy SourceFiles="$(ClangShimBinary);$(ClangShimBinary)" DestinationFiles="$(ObjCopyShimBinary);$(LinkShimBinary)" OverwriteReadOnlyFiles="true" />
     <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ObjCopyShimBinary)&quot; &quot;$(LinkShimBinary)&quot;" />
 
@@ -225,7 +225,23 @@
     <Error Condition="'$(UseExternalZig)' == 'false' and !Exists('$(ZigPath)')"
            Text="AotAnywhere: the Zig toolset ('Vezel.Zig.Toolsets.$(HostRuntimeIdentifier)' $(ZigVersion)) was not restored. NuGet cannot restore package references declared inside a package's build targets, so a plain PackageReference to StuDev.AotAnywhere does not fetch Zig on a clean machine. Either reference the package as an MSBuild SDK instead — &lt;Sdk Name=&quot;StuDev.AotAnywhere&quot; Version=&quot;&lt;package version&gt;&quot; /&gt; — which restores Zig automatically, or add &lt;PackageReference Include=&quot;Vezel.Zig.Toolsets.$(HostRuntimeIdentifier)&quot; Version=&quot;$(ZigVersion)&quot; PrivateAssets=&quot;all&quot; GeneratePathProperty=&quot;true&quot; /&gt; alongside it, or set UseExternalZig=true with zig on your PATH." />
 
-    <PrependPath Condition="'$(UseExternalZig)' == 'false'" Value="$(ZigPath)" />
+    <!-- The single source of truth for the zig executable, used to compile the
+         shim (CompileClangShim), to link directly (AotAnywhereDirectLinkNative),
+         and by the exec'd shim itself (AOTANYWHERE_ZIG below): an absolute path
+         into the restored toolset, or bare `zig` on PATH when zig is external
+         or the toolset path could not be resolved. -->
+    <PropertyGroup>
+      <_AotAnywhereZigExe>zig</_AotAnywhereZigExe>
+      <_AotAnywhereZigExe Condition="'$(UseExternalZig)' == 'false' and Exists('$(ZigPath)')">$(ZigPath)/zig</_AotAnywhereZigExe>
+      <_AotAnywhereZigExe Condition="'$(UseExternalZig)' == 'false' and Exists('$(ZigPath)') and $([MSBuild]::IsOSPlatform('Windows'))">$(ZigPath)/zig.exe</_AotAnywhereZigExe>
+    </PropertyGroup>
+
+    <!-- The shim (exec'd as the linker for macOS and Windows targets) reads
+         this and execs zig by absolute path, so zig no longer needs its
+         directory prepended to PATH. When it resolves to bare `zig` the shim
+         falls back to a PATH lookup, matching the pre-existing external-zig
+         and degraded-restore behavior. -->
+    <SetEnvVar Name="AOTANYWHERE_ZIG" Value="$(_AotAnywhereZigExe)" />
 
   </Target>
 

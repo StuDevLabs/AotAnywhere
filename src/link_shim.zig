@@ -42,8 +42,9 @@ pub fn isLinkInvocation(argv0: []const u8) bool {
     return std.ascii.eqlIgnoreCase(base, "link");
 }
 
-/// Entry point when the shim is invoked as link. Never returns.
-pub fn run(arena: Allocator, io: std.Io, args: []const []const u8, debug: bool) noreturn {
+/// Entry point when the shim is invoked as link. Never returns. `zig_exe` is
+/// the zig executable to exec (absolute path from AOTANYWHERE_ZIG, or `zig`).
+pub fn run(arena: Allocator, io: std.Io, args: []const []const u8, debug: bool, zig_exe: []const u8) noreturn {
     const reader = IoFileReader{ .io = io };
     const tokens = expandResponseFiles(arena, reader, args, 0) catch |err|
         fatal(io, "cannot expand response files: {s}", .{@errorName(err)});
@@ -65,7 +66,7 @@ pub fn run(arena: Allocator, io: std.Io, args: []const []const u8, debug: bool) 
         fatal(io, "cannot write support files in '{s}': {s}", .{ support_dir, @errorName(err) });
 
     var argv: Args = .empty;
-    argv.appendSlice(arena, &.{ "zig", "cc" }) catch |err| fatal(io, "out of memory: {s}", .{@errorName(err)});
+    argv.appendSlice(arena, &.{ zig_exe, "cc" }) catch |err| fatal(io, "out of memory: {s}", .{@errorName(err)});
     argv.appendSlice(arena, translation.args.items) catch |err| fatal(io, "out of memory: {s}", .{@errorName(err)});
     argv.append(arena, glue_path) catch |err| fatal(io, "out of memory: {s}", .{@errorName(err)});
     const stub_arg = std.fmt.allocPrint(arena, "-L{s}", .{
