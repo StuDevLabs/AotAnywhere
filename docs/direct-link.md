@@ -117,9 +117,12 @@ Bake coverage beyond Hello World, in both flows for A/B parity:
   mutation. The `SetupOSSpecificProps` linker/objcopy probes are now
   satisfied by absolute path on non-Windows hosts (`PointLinkerToShim`), so
   the shim's PATH prepend is gone there; Windows hosts still prepend it
-  (their `where /Q` probe cannot take an absolute path), and zig itself
-  remains on PATH on every host, because the shim still execs `zig` by bare
-  name.
+  (their `where /Q` probe cannot take an absolute path). Zig is no longer on
+  PATH either: `SetPathToZig` passes its absolute path to the shim through the
+  `AOTANYWHERE_ZIG` environment variable (and the direct link and shim
+  compilation use `$(_AotAnywhereZigExe)` directly), so the only PATH mutation
+  left is the Windows-host shim prepend. The shim still falls back to a PATH
+  `zig` when `AOTANYWHERE_ZIG` is unset (external zig, degraded restore).
 
 ## Not covered (future work, if the experiment earns it)
 
@@ -128,12 +131,12 @@ Bake coverage beyond Hello World, in both flows for A/B parity:
   translation, MinGW glue, `/MERGE` COFF renames — all link-shim logic).
 - `NativeLib=Static` (the SDK uses `ar` via `CppLibCreator`; untouched —
   the direct-link target conditions itself out and the SDK flow applies).
-- Removing the remaining PATH prepends: the zig one (the shim execs `zig` by
-  bare name; giving it zig's absolute path — e.g. via an env channel or argv
-  — would let `SetPathToZig` drop the prepend) on every host, and the shim
-  one still needed on Windows hosts (whose `where /Q` probe rejects an
-  absolute path). Plus the `AOTANYWHERE_APPLE_SYSROOT` process-environment
-  channel.
+- Removing the last PATH prepend — the shim one still needed on Windows hosts
+  (whose `where /Q` probe rejects an absolute path); it would need a linker
+  resolvable by a colon-free name. Plus collapsing the process-environment
+  channels (`AOTANYWHERE_ZIG`, `AOTANYWHERE_APPLE_SYSROOT`), which trade PATH
+  mutation for a namespaced env var the shim reads — cleaner, but still not
+  zero mutation.
 - `StaticICULinking`/`StaticOpenSslLinking` invoke `build-local.sh` with
   `CC=$(CppLinker)`, now the shim's absolute path (`PointLinkerToShim`);
   they keep working because the shim forwards compile-only invocations

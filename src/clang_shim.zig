@@ -27,6 +27,9 @@
 //!   ZIG_SHIM_DEBUG                - print original and final argument lists
 //!   AOTANYWHERE_APPLE_SYSROOT - sysroot with Apple framework/library
 //!                                   stubs (.tbd files) for macOS targets
+//!   AOTANYWHERE_ZIG               - absolute path to the zig executable to
+//!                                   exec; falls back to `zig` on PATH when
+//!                                   unset (external-zig or degraded restore)
 //!
 //! Run the unit tests with: zig test clang_shim.zig
 
@@ -58,14 +61,20 @@ pub fn main(init: std.process.Init) !void {
         for (args) |arg| say("  '{s}'", .{arg});
     }
 
+    // The package points this at the restored toolset's zig by absolute path
+    // so no PATH mutation is needed; falls back to `zig` on PATH (external
+    // zig, or a degraded restore where the path could not be resolved).
+    const zig_exe = nonEmpty(init.environ_map.get("AOTANYWHERE_ZIG")) orelse "zig";
+    if (debug) say("[DEBUG] zig executable: '{s}'", .{zig_exe});
+
     if (argv.len > 0 and isObjcopyInvocation(argv[0]))
         objcopy_shim.run(arena, io, args);
 
     if (argv.len > 0 and link_shim.isLinkInvocation(argv[0]))
-        link_shim.run(arena, io, args, debug);
+        link_shim.run(arena, io, args, debug, zig_exe);
 
     var out: Args = .empty;
-    try out.appendSlice(arena, &.{ "zig", "cc" });
+    try out.appendSlice(arena, &.{ zig_exe, "cc" });
 
     if (isQueryInvocation(args)) {
         // Toolchain queries (the ILC targets probe `clang --version` on

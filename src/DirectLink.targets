@@ -44,15 +44,10 @@
           Inputs="$(NativeObject);@(NativeLibrary)"
           Outputs="$(NativeBinary)">
 
-    <!-- $(ZigPath) can be a dangling '/tools' when the Vezel package was not
-         part of the restore (the known consumer restore gap); fall back to a
-         PATH zig in that case, matching how the shim flow degrades. -->
-    <PropertyGroup>
-      <_AotAnywhereZigExe>zig</_AotAnywhereZigExe>
-      <_AotAnywhereZigExe Condition="'$(UseExternalZig)' == 'false' and Exists('$(ZigPath)')">$(ZigPath)/zig</_AotAnywhereZigExe>
-      <_AotAnywhereZigExe Condition="'$(UseExternalZig)' == 'false' and Exists('$(ZigPath)') and $([MSBuild]::IsOSPlatform('Windows'))">$(ZigPath)/zig.exe</_AotAnywhereZigExe>
-    </PropertyGroup>
-
+    <!-- $(_AotAnywhereZigExe) is the absolute path to the restored toolset's
+         zig, computed once in SetPathToZig (a DependsOn above); it degrades to
+         a bare PATH `zig` when $(ZigPath) is a dangling '/tools' (the known
+         consumer restore gap), matching how the shim flow degrades. -->
     <ItemGroup>
       <!-- Linker arguments the SDK computes that zig cc cannot take: no libz
            in zig's Linux sysroots (net8 always adds -lz; net9+ link the
