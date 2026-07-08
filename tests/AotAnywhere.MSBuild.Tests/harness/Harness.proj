@@ -1,0 +1,19 @@
+<Project>
+
+  <!-- Test harness. Imports the package's real Crosscompile.targets (which in
+       turn imports DirectLink.targets) so tests can evaluate its file-scope
+       properties and execute individual targets in isolation. Inputs are
+       injected as MSBuild global properties by the test; @(LinkerArg) is seeded
+       from the semicolon-delimited $(TestLinkerArgs) property because items
+       cannot be passed as global properties.
+
+       $(AotAnywhereSrcDir) is supplied by the test as an absolute path to the
+       repo's src/ directory. -->
+
+  <ItemGroup>
+    <LinkerArg Include="$(TestLinkerArgs)" />
+  </ItemGroup>
+
+  <Import Project="$(AotAnywhereSrcDir)Crosscompile.targets" />
+
+</Project>

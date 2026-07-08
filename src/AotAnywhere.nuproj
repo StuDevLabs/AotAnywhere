@@ -1,16 +1,12 @@
 <Project Sdk="Microsoft.Build.NoTargets">
 
-  <!-- Zig used to cross-compile the prebuilt shims below (BuildClangShims) and
-       to run the shim unit tests (TestShims). Sourced from the single pin in
-       ZigVersion.props, the same file the packed targets import. -->
+  <!-- The single ZigVersion pin, baked into Sdk.props at pack time (BakeSdkProps).
+       Same file the packed targets import. -->
   <Import Project="ZigVersion.props" />
 
   <PropertyGroup>
 
     <TargetFramework>netstandard2.0</TargetFramework>
-
-    <PackHostRuntimeIdentifier Condition="'$(PackHostRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</PackHostRuntimeIdentifier>
-    <ShimIntermediateDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', 'shim'))</ShimIntermediateDir>
 
     <PackageId>StuDev.AotAnywhere</PackageId>
     <Version Condition="'$(Version)' == ''">42.42.42-dev</Version>
@@ -50,15 +46,16 @@
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
-    <None Include="clang_shim.zig">
+    <!-- Compiled into every macOS link by AotAnywhereDirectLinkMacNative
+         (referenced via $(MSBuildThisFileDirectory)); must sit next to the
+         targets in build/. -->
+    <None Include="aotanywhere-gs-pad.c">
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
-    <None Include="objcopy_shim.zig">
-      <Pack>true</Pack>
-      <PackagePath>build</PackagePath>
-    </None>
-    <None Include="link_shim.zig">
+    <!-- MSVC glue compiled into every Windows link by the AotAnywhereWindowsLink
+         task (referenced via $(MSBuildThisFileDirectory)); must sit in build/. -->
+    <None Include="aotanywhere-msvc-glue.c">
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
@@ -130,89 +127,25 @@
 
   </Target>
 
-  <!-- Zig for the pack host, used to cross-compile the shims for every host RID. -->
-  <ItemGroup>
-    <PackageReference Include="Vezel.Zig.Toolsets.$(PackHostRuntimeIdentifier)"
-      Version="$(ZigVersion)"
-      PrivateAssets="all"
-      GeneratePathProperty="true" />
-  </ItemGroup>
-
-  <!-- Host RIDs we ship a prebuilt shim for, and the zig target triple for each.
-       Linux uses musl so the shim is a static binary that runs on any distro. -->
-  <ItemGroup>
-    <ShimTarget Include="win-x64"     Triple="x86_64-windows"     Exe="clang.exe" />
-    <!-- win-arm64 omitted: zig 0.16 aarch64-windows codegen produces a shim that
-         crashes at startup on real arm64-Windows, so that host is unsupported. -->
-    <ShimTarget Include="win-x86"     Triple="x86-windows"        Exe="clang.exe" />
-    <ShimTarget Include="osx-x64"     Triple="x86_64-macos"       Exe="clang" />
-    <ShimTarget Include="osx-arm64"   Triple="aarch64-macos"      Exe="clang" />
-    <ShimTarget Include="linux-x64"   Triple="x86_64-linux-musl"  Exe="clang" />
-    <ShimTarget Include="linux-arm64" Triple="aarch64-linux-musl" Exe="clang" />
-  </ItemGroup>
-
-  <!-- Resolve the pack-host zig from the Vezel toolset package. Shared by
-       BuildClangShims (cross-compiles the shims) and TestShims (runs the shim
-       unit tests) so both use the exact pinned ZigVersion. -->
-  <Target Name="_ResolveZigForShims">
-    <PropertyGroup>
-      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('win-x86'))">$(PkgVezel_Zig_Toolsets_win-x86)/tools</_ZigTools>
-      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('win-x64'))">$(PkgVezel_Zig_Toolsets_win-x64)/tools</_ZigTools>
-      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('win-arm64'))">$(PkgVezel_Zig_Toolsets_win-arm64)/tools</_ZigTools>
-      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('osx-x64'))">$(PkgVezel_Zig_Toolsets_osx-x64)/tools</_ZigTools>
-      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('osx-arm64'))">$(PkgVezel_Zig_Toolsets_osx-arm64)/tools</_ZigTools>
-      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('linux-x64'))">$(PkgVezel_Zig_Toolsets_linux-x64)/tools</_ZigTools>
-      <_ZigTools Condition="$(PackHostRuntimeIdentifier.StartsWith('linux-arm64'))">$(PkgVezel_Zig_Toolsets_linux-arm64)/tools</_ZigTools>
-      <_ZigExe Condition="$(PackHostRuntimeIdentifier.StartsWith('win-'))">$(_ZigTools)/zig.exe</_ZigExe>
-      <_ZigExe Condition="'$(_ZigExe)' == ''">$(_ZigTools)/zig</_ZigExe>
-    </PropertyGroup>
-
-    <Error Condition="'$(_ZigTools)' == ''"
-           Text="No Vezel.Zig.Toolsets package for pack host '$(PackHostRuntimeIdentifier)'. Set PackHostRuntimeIdentifier to a supported host RID." />
+  <!-- Build the managed task assembly (one portable netstandard2.0 DLL) and
+       pack it into build/tasks/, where
+       DirectLink.targets' $(AotAnywhereTasksAssembly) default resolves it. -->
+  <Target Name="BuildTasksAssembly">
+    <MSBuild Projects="tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj"
+             Targets="Build"
+             Properties="Configuration=Release">
+      <Output TaskParameter="TargetOutputs" ItemName="_TasksAssembly" />
+    </MSBuild>
   </Target>
 
-  <Target Name="BuildClangShims"
-          DependsOnTargets="_ResolveZigForShims"
-          Inputs="clang_shim.zig;objcopy_shim.zig;link_shim.zig;$(MSBuildProjectFullPath)"
-          Outputs="@(ShimTarget->'$(ShimIntermediateDir)%(Identity)/%(Exe)')">
-
-    <MakeDir Directories="$(ShimIntermediateDir)%(ShimTarget.Identity)" />
-
-    <!-- ReleaseSafe keeps runtime safety checks (the shim runs in the link
-         hot path); -fstrip drops debug info to keep the package small. -->
-    <Exec Command="&quot;$(_ZigExe)&quot; build-exe -O ReleaseSafe -fstrip -target %(ShimTarget.Triple) -femit-bin=&quot;$(ShimIntermediateDir)%(ShimTarget.Identity)/%(ShimTarget.Exe)&quot; &quot;$(MSBuildProjectDirectory)/clang_shim.zig&quot;" />
-
-  </Target>
-
-  <!-- Run the shim unit tests against the pinned zig. Encodes the ZigVersion
-       bump checklist item "zig test the shims" (see docs/zig-version-bump.md):
-       the shim sources must compile and pass with the pinned toolchain, and
-       zig's std APIs churn between releases. Invoked in CI on every PR via
-       `dotnet build -t:TestShims src/AotAnywhere.nuproj`. -->
-  <Target Name="TestShims" DependsOnTargets="_ResolveZigForShims">
-    <Message Importance="high" Text="zig test %(ShimSource.Identity) (zig $(ZigVersion))" />
-    <Exec Command="&quot;$(_ZigExe)&quot; test &quot;$(MSBuildProjectDirectory)/%(ShimSource.Identity)&quot;" />
-  </Target>
-
-  <ItemGroup>
-    <ShimSource Include="clang_shim.zig" />
-    <ShimSource Include="objcopy_shim.zig" />
-    <ShimSource Include="link_shim.zig" />
-  </ItemGroup>
-
-  <!-- Register the shims for packing in a separate, always-run target: doing it
-       inside BuildClangShims would drop them from the package whenever that
-       target is skipped as up-to-date on an incremental pack. -->
-  <Target Name="IncludeClangShimsInPackage"
-          DependsOnTargets="BuildClangShims"
+  <Target Name="IncludeTasksAssemblyInPackage"
+          DependsOnTargets="BuildTasksAssembly"
           BeforeTargets="_GetPackageFiles">
-
     <ItemGroup>
-      <None Include="$(ShimIntermediateDir)%(ShimTarget.Identity)/%(ShimTarget.Exe)">
+      <None Include="@(_TasksAssembly)">
         <Pack>true</Pack>
-        <PackagePath>build/shim/%(ShimTarget.Identity)/</PackagePath>
+        <PackagePath>build/tasks/</PackagePath>
       </None>
     </ItemGroup>
-
   </Target>
 </Project>

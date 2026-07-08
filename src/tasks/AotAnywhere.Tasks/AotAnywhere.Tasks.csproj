@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Managed implementation of the Windows link step: the MSVC link.exe -> zig
+       cc translation and the /MERGE COFF section renames (ported from the
+       retired link_shim.zig, which impersonated link.exe on PATH). A precompiled
+       MSBuild task the package's targets invoke directly - no linker
+       interception, no per-host prebuilt shim, and unit-testable in C#.
+       netstandard2.0 so the task assembly loads in any MSBuild. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <!-- MSBuild provides these at run time (the task DLL is loaded into MSBuild);
+       compile against them but never ship our own copy. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.8.3" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Framework" Version="17.8.3" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

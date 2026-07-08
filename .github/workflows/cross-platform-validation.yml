@@ -26,57 +26,16 @@ env:
   APPLE_CODESIGN_VERSION: 0.29.0
 
 jobs:
-  # Build the prebuilt clang shims once, on a host whose zig can cross-compile
-  # every host's shim. The build jobs below consume these instead of compiling
-  # the shim on demand — which some hosts' zig cannot do at all (arm64-Windows
-  # zig 0.16 segfaults in build-exe). This mirrors how real consumers use the
-  # shipped package: the shim is prebuilt, not compiled on their machine.
-  pack:
-    # windows-latest (win-x64) is proven to cross-compile all seven shims; its
-    # zig is fine. (It is arm64-Windows zig specifically whose build-exe is broken.)
-    runs-on: windows-latest
-    name: Build prebuilt shims
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v7
-      # This job gates every build job below, and the shims only change when
-      # their zig sources or the pinned ZigVersion (in AotAnywhere.nuproj)
-      # change - so cache them and skip the ~3 minute compile on the vastly
-      # more common no-change run.
-      - name: Cache prebuilt shims
-        id: shim-cache
-        uses: actions/cache@v6
-        with:
-          path: src/obj/shim
-          key: prebuilt-shims-${{ hashFiles('src/clang_shim.zig', 'src/objcopy_shim.zig', 'src/link_shim.zig', 'src/AotAnywhere.nuproj') }}
-      - name: Setup .NET
-        if: steps.shim-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '8.0.x'
-      - name: Cache NuGet packages
-        if: steps.shim-cache.outputs.cache-hit != 'true'
-        uses: actions/cache@v6
-        with:
-          path: ~/.nuget/packages
-          key: nuget-pack-${{ runner.os }}-${{ hashFiles('src/AotAnywhere.nuproj') }}
-      - name: Build NuGet package (all host shims)
-        if: steps.shim-cache.outputs.cache-hit != 'true'
-        run: dotnet build -t:Pack src/AotAnywhere.nuproj
-      - name: Upload prebuilt shims
-        uses: actions/upload-artifact@v7
-        with:
-          name: prebuilt-shims
-          path: src/obj/shim/
-
-  # Run the Zig shim unit tests against the pinned toolchain. Encodes the first
-  # item of the ZigVersion bump checklist (docs/zig-version-bump.md) so a bump
-  # that breaks the shims against zig's churning std APIs fails here, on every
-  # PR, rather than in a downstream link. Uses the exact pinned ZigVersion via
-  # the Vezel toolset (see the TestShims target in AotAnywhere.nuproj).
-  shim-tests:
+  # Unit-test the MSBuild link logic (activation flags, target-triple mapping,
+  # macOS DirectLink argument reconstruction) via the Microsoft.Build APIs -
+  # no zig, no ILCompiler restore, no linking. Guards the arg-framing coupling
+  # that the DirectLink flow trades for transparency: e.g. that the macOS line
+  # never carries GNU-ld gc-sections/discard-all (a past startup-crash bug) and
+  # that Swift-runtime links still get their overlay libs. Runs via `dotnet run`
+  # (the test app is a Microsoft.Testing.Platform executable).
+  msbuild-logic-tests:
     runs-on: ubuntu-latest
-    name: Zig shim unit tests
+    name: MSBuild logic unit tests
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7
@@ -84,8 +43,8 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
-      - name: zig test the shims
-        run: dotnet build -t:TestShims src/AotAnywhere.nuproj
+      - name: Run MSBuild logic tests
+        run: dotnet run --project tests/AotAnywhere.MSBuild.Tests/AotAnywhere.MSBuild.Tests.csproj -c Release
 
   # Consume the package the way real users do — installed from a feed into a
   # clean NuGet cache. test/Hello.csproj (used by the build matrix) imports
@@ -97,7 +56,6 @@ jobs:
   # the actionable error. One host is enough — the restore-graph behavior
   # under test is host-independent.
   package-consumption:
-    needs: pack
     runs-on: ubuntu-latest
     name: Package consumption (clean NuGet cache)
     steps:
@@ -107,14 +65,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
-      # Reuse the shims from the pack job (whose host zig is proven to
-      # cross-compile all of them): with them in place, the script's pack
-      # skips BuildClangShims as up-to-date.
-      - name: Download prebuilt shims
-        uses: actions/download-artifact@v8
-        with:
-          name: prebuilt-shims
-          path: src/obj/shim
       - name: Test package consumption from a clean NuGet cache
         run: bash .github/scripts/test-package-consumption.sh linux-x64
 
@@ -154,7 +104,7 @@ jobs:
   # Build matrix: every host builds all ten targets; the target list lives
   # in the parallel build steps below (grouped glibc/musl/macOS/Windows).
   build:
-    needs: [pack, test-cert]
+    needs: [test-cert]
     strategy:
       fail-fast: false
       matrix:
@@ -202,15 +152,6 @@ jobs:
           restore-keys: |
             nuget-publish-${{ runner.os }}-${{ runner.arch }}-
 
-      # Drop the prebuilt shims where StuDev.AotAnywhere.targets looks for them
-      # (src/shim/<host-rid>), so the publishes below use this host's prebuilt
-      # shim instead of compiling one — required on hosts whose zig can't.
-      - name: Download prebuilt shims
-        uses: actions/download-artifact@v8
-        with:
-          name: prebuilt-shims
-          path: src/shim
-
       - name: Download test signing certificate
         uses: actions/download-artifact@v8
         with:
@@ -255,6 +196,15 @@ jobs:
         shell: bash
         run: dotnet restore test/Hello.csproj
 
+      # The Windows link goes through the managed AotAnywhereWindowsLink task
+      # (one portable netstandard2.0 DLL). Build it once here, serially, so the
+      # source-consumption publishes below resolve $(AotAnywhereTasksAssembly)
+      # via the dev fallback (DirectLink.targets) and the parallel groups never
+      # race on its output directory.
+      - name: Build link task
+        shell: bash
+        run: dotnet build src/tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj -c Release
+
       # The ten publishes are independent, so run them as four concurrent
       # streams (Actions parallel steps). Four streams - not ten - because
       # the hosted runners have 3-4 cores and ILC is memory-hungry; grouping
@@ -273,23 +223,15 @@ jobs:
           #   lib-linux-x64      - NativeLib=Shared library
           - name: Build glibc Linux targets
             shell: bash
-            env:
-              ZIG_SHIM_DEBUG: "1"
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "linux-x64,linux-arm64,linux-arm,linux-x64-selftest"
           - name: Build musl Linux targets
             shell: bash
-            env:
-              ZIG_SHIM_DEBUG: "1"
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "linux-musl-x64,linux-musl-arm64,linux-musl-arm"
           - name: Build macOS targets
             shell: bash
-            env:
-              ZIG_SHIM_DEBUG: "1"
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "osx-x64,osx-arm64"
           - name: Build Windows targets and linux shared library
             shell: bash
-            env:
-              ZIG_SHIM_DEBUG: "1"
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "win-x64,win-arm64,lib-linux-x64"
 
 

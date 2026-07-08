@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- Not an AOT publish; keep the package's targets out of this project. -->
+    <PublishAot>false</PublishAot>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The managed core of the Windows link task (pure translator + COFF
+         renamer), exercised by WindowsTranslatorTests / CoffRenamerTests. -->
+    <ProjectReference Include="../../src/tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" Version="1.58.0" />
+    <PackageReference Include="Microsoft.Build.Locator" Version="1.11.2" />
+    <!-- Compile against the MSBuild API but bind to the SDK's own copies at
+         run time (MSBuildLocator loads them); referencing the runtime assets
+         would collide with the resolved SDK MSBuild. -->
+    <PackageReference Include="Microsoft.Build" Version="17.8.3" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Framework" Version="17.8.3" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.8.3" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

@@ -5,9 +5,11 @@ priority. Items marked **(spike)** are exploratory — the deliverable may be a
 "no, because X" writeup rather than a shipped feature.
 
 Status at time of writing: shipped 1.0.0 to nuget.org (2026-07-06). The core is
-solid — Linux links run directly through `zig cc` from MSBuild; Windows/macOS go
-through the multi-call shim. The rough edges are mostly at the seams: the shim
-personalities, the NuGet consumption model, and version/drift maintenance.
+solid — there is no native shim any more: Linux and macOS links run directly
+through `zig cc` from MSBuild, Windows links and the ELF strip run through a
+single managed task assembly, and the SDK's linker probes are pointed at zig.
+The rough edges are now mostly at the NuGet consumption model and version/drift
+maintenance.
 
 ## Tier 1 — Rough edges that bite real users
 
@@ -33,35 +35,40 @@ personalities, the NuGet consumption model, and version/drift maintenance.
    than an MSVC link. Spike what lld / `zig cc` can express here; landing ICF-
    equivalent folding and CET markers would close the "link on Windows for
    release" caveat. See `docs/windows-targets.md`.
-5. **macOS direct-link (spike).** macOS still runs entirely through the clang
-   shim (Apple sysroot flags, GS pad, Swift overlay libs). Extending the
-   DirectLink approach to macOS gets the full command line into binlogs and
-   shrinks the shim's remaining surface — flagged as the next candidate in
-   `docs/direct-link.md`.
+5. **macOS direct-link. ✅ Done.** macOS now links through the DirectLink
+   MSBuild takeover (`AotAnywhereDirectLinkMacNative`) like Linux — Apple sysroot
+   flags, GS pad and Swift overlay libs are reconstructed as MSBuild items, the
+   full command line is in binlogs, and the clang shim is gone. This, plus the
+   Windows link task and the managed ELF strip, retired the native shim entirely.
 
 ## Tier 3 — Architecture / tech debt
 
-6. **Zero PATH mutation.** Only the Windows-host shim prepend remains (because
+6. **Zero PATH mutation.** Only the Windows-host zig-dir prepend remains (because
    `where /Q` rejects a drive-lettered absolute path). Spike a colon-free linker
-   name so the shim resolves by bare name without a prepend, then collapse the
+   name so zig resolves by bare name without a prepend, then collapse the
    `AOTANYWHERE_ZIG` / `AOTANYWHERE_APPLE_SYSROOT` env channels. Finishes the
    arc that's ~90% done. **Spiked & resolved:** see `docs/zero-path-mutation.md`.
    A Windows-runner experiment proved `where /Q` accepts no colon-free path with
    a directory component (drive-relative, project-relative, forward-slash and
    `dir:pattern` all fail), so the prepend is irreducible without an upstream SDK
-   hook (folds into #7). The env-channel collapse is feasible via `LinkerArg` but
-   does not touch PATH, so it is deferred as marginal. This item is closed as
+   hook (folds into #7). The `AOTANYWHERE_ZIG` / `AOTANYWHERE_APPLE_SYSROOT` env
+   channels are since **gone** (the shim that read them was removed), so nothing
+   but the one Windows-host prepend remains. This item is closed as
    "no, because `where /Q`".
-7. **Upstream dotnet/runtime ask (exploratory).** The shim exists because ILC's
-   linker probes are unskippable and there's no hook to override the link
-   invocation. Draft the extension-point proposal / issue. Long shot, but the
-   only path that makes the entire hack obsolete.
+7. **Upstream dotnet/runtime ask (exploratory).** The DirectLink takeovers and
+   the zig-pointed probe exist because ILC's linker probes are unskippable and
+   there's no hook to override the link invocation. The native shim is gone, but
+   the one residue — the Windows-host `PATH` prepend — needs an upstream hook to
+   remove. Draft the extension-point proposal / issue. Long shot, but the only
+   path that makes the last workaround obsolete.
 
 ## Tier 4 — Reach / new capabilities
 
 8. **Re-enable win-arm64 as a host (blocked, tracked).** Blocked on zig 0.16's
-   broken aarch64-windows codegen. Standing item: re-test on each `ZigVersion`
-   bump — both the `build-exe` crash and a cross-built binary actually running.
+   broken aarch64-windows self-hosted codegen. Now that links go through
+   `zig cc` (the LLVM backend) rather than a `zig build-exe`-compiled shim, an
+   arm64-Windows *host* may already work — standing item: on each `ZigVersion`
+   bump (or given an arm64-Windows machine), test publishing from it.
 9. **New target RIDs (spike).** Zig can target things .NET partially supports —
    `linux-bionic` (Android), FreeBSD. Spike whether any are reachable with the
    existing sysroot machinery.
@@ -81,8 +88,9 @@ personalities, the NuGet consumption model, and version/drift maintenance.
 
 ## Suggested ordering
 
-**#2 and #1 first** (adoption friction). **#6 is now closed** — the zero-mutation
-arc is as complete as the SDK's `where /Q` probe allows (see
-`docs/zero-path-mutation.md`); its only remaining route folds into **#7**. That
-leaves **#4 / #5** as the meaty target-quality work, with **#7 and #9** as
-background spikes.
+**#1 first** (adoption friction). **#5 and #6 are now closed** — macOS is on the
+DirectLink takeover and the native shim is gone entirely; the zero-mutation arc
+is as complete as the SDK's `where /Q` probe allows (see
+`docs/zero-path-mutation.md`), its only remaining route folding into **#7**. That
+leaves **#4** (Windows hardening parity) as the meaty target-quality work, with
+**#7 and #9** as background spikes.

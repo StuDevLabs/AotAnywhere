@@ -9,44 +9,10 @@
     <HostRuntimeIdentifier Condition="'$(HostRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</HostRuntimeIdentifier>
     <UseExternalZig Condition="'$(UseExternalZig)' == ''">false</UseExternalZig>
 
-    <!-- The package ships a shim prebuilt for each common host under
-         build/shim/<host-rid>; when one matches this host we use it and skip
-         compilation entirely. Otherwise the single Zig source is compiled on
-         demand with the zig toolchain above, covering any host OS/arch. -->
-    <ClangShimSource>$(MSBuildThisFileDirectory)clang_shim.zig</ClangShimSource>
-
-    <PrebuiltClangShimDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', 'shim', '$(HostRuntimeIdentifier)'))</PrebuiltClangShimDir>
-    <PrebuiltClangShim Condition="$(HostRuntimeIdentifier.StartsWith('win-'))">$(PrebuiltClangShimDir)clang.exe</PrebuiltClangShim>
-    <PrebuiltClangShim Condition="'$(PrebuiltClangShim)' == ''">$(PrebuiltClangShimDir)clang</PrebuiltClangShim>
-    <UsePrebuiltClangShim Condition="'$(UsePrebuiltClangShim)' == '' and Exists('$(PrebuiltClangShim)')">true</UsePrebuiltClangShim>
-    <UsePrebuiltClangShim Condition="'$(UsePrebuiltClangShim)' == ''">false</UsePrebuiltClangShim>
-
-    <!-- The shim is always materialized into the intermediate dir (so we can
-         guarantee the executable bit regardless of how the package was
-         packed). The ILC targets reach it there by absolute path on
-         non-Windows hosts, or via this dir on PATH on Windows hosts (see
-         PointLinkerToShim for why). -->
-    <ClangShimDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'aotanywhere'))</ClangShimDir>
-    <ClangShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)clang.exe</ClangShimBinary>
-    <ClangShimBinary Condition="'$(ClangShimBinary)' == ''">$(ClangShimDir)clang</ClangShimBinary>
-
-    <!-- The shim is a multi-call binary: materialized a second time as
-         llvm-objcopy it performs the ELF symbol stripping the ILC targets
-         run for Linux targets, so StripSymbols=true (the default there)
-         works with no LLVM install. -->
-    <ObjCopyShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)llvm-objcopy.exe</ObjCopyShimBinary>
-    <ObjCopyShimBinary Condition="'$(ObjCopyShimBinary)' == ''">$(ClangShimDir)llvm-objcopy</ObjCopyShimBinary>
-
-    <!-- Materialized a third time as link, the shim stands in for MSVC's
-         link.exe when targeting Windows from a Linux/macOS host: it
-         translates the MSVC-style response file the ILC targets write into
-         a `zig cc -target <arch>-windows-gnu` invocation. -->
-    <LinkShimBinary Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(ClangShimDir)link.exe</LinkShimBinary>
-    <LinkShimBinary Condition="'$(LinkShimBinary)' == ''">$(ClangShimDir)link</LinkShimBinary>
-
     <!-- Cross-compiling to Windows: skip the ILC targets' vcvarsall probe (a
-         Windows batch file) so CppLinker stays at its plain-'link' default,
-         which OverwriteTargetTriple then points at the link shim. -->
+         Windows batch file). The link itself is taken over by the
+         AotAnywhereWindowsLink task (DirectLink.targets), so CppLinker is never
+         invoked - no MSVC and no link shim needed. -->
     <_AotAnywhereWindowsCross>false</_AotAnywhereWindowsCross>
     <_AotAnywhereWindowsCross Condition="$(RuntimeIdentifier.StartsWith('win')) and !$([MSBuild]::IsOSPlatform('Windows'))">true</_AotAnywhereWindowsCross>
     <IlcUseEnvironmentalTools Condition="'$(_AotAnywhereWindowsCross)' == 'true'">true</IlcUseEnvironmentalTools>
@@ -69,31 +35,12 @@
       Condition="'$(UseExternalZig)' == 'false' and '$(_AotAnywhereZigRefViaSdk)' != 'true'" />
   </ItemGroup>
 
-  <UsingTask TaskName="SetEnvVar"
-             TaskFactory="RoslynCodeTaskFactory"
-             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
-
-    <ParameterGroup>
-      <Name ParameterType="System.String" Required="true" />
-      <Value ParameterType="System.String" Required="true" />
-    </ParameterGroup>
-
-    <Task>
-      <Using Namespace="System" />
-      <Code Type="Fragment" Language="cs">
-        <![CDATA[
-          Environment.SetEnvironmentVariable(Name, Value);
-        ]]>
-      </Code>
-    </Task>
-
-  </UsingTask>
-
   <!-- Cross-compiling to macOS needs Apple linker stubs (.tbd files). The
        package ships a minimal, self-generated set covering exactly the
-       symbols .NET's runtime packs reference; point the clang shim at it
-       unless the user supplied their own sysroot (via the
-       AotAnywhereAppleSysroot property or the environment variable). -->
+       symbols .NET's runtime packs reference; the macOS link takeover
+       (AotAnywhereDirectLinkMacNative) reads $(AotAnywhereAppleSysroot) unless
+       the user supplied their own sysroot (via the AotAnywhereAppleSysroot
+       property or the AOTANYWHERE_APPLE_SYSROOT environment variable). -->
   <Target Name="SetAppleSysroot"
           BeforeTargets="SetupOSSpecificProps"
           Condition="$(RuntimeIdentifier.StartsWith('osx')) and !$([MSBuild]::IsOSPlatform('OSX'))">
@@ -102,8 +49,6 @@
       <AotAnywhereAppleSysroot Condition="'$(AotAnywhereAppleSysroot)' == ''">$(AOTANYWHERE_APPLE_SYSROOT)</AotAnywhereAppleSysroot>
       <AotAnywhereAppleSysroot Condition="'$(AotAnywhereAppleSysroot)' == ''">$(MSBuildThisFileDirectory)apple-sysroot</AotAnywhereAppleSysroot>
     </PropertyGroup>
-
-    <SetEnvVar Name="AOTANYWHERE_APPLE_SYSROOT" Value="$(AotAnywhereAppleSysroot)" />
 
   </Target>
 
@@ -127,70 +72,39 @@
 
   </UsingTask>
 
-  <!-- Fast path: copy the shim prebuilt for this host out of the package.
-       Copy (rather than run it in place) so we can force the executable bit,
-       which is lost when the package is packed on Windows. -->
-  <Target Name="CopyPrebuiltClangShim"
-          Condition="'$(UsePrebuiltClangShim)' == 'true'"
-          BeforeTargets="SetupOSSpecificProps"
-          Inputs="$(PrebuiltClangShim)"
-          Outputs="$(ClangShimBinary);$(ObjCopyShimBinary);$(LinkShimBinary)">
+  <!-- Satisfy SetupOSSpecificProps' tool probes (Microsoft.NETCore.Native.Unix.targets,
+       used for Linux and macOS targets), which run `command -v "$(CppLinker)"`
+       (and the same for the objcopy strip tool) and error if they are not
+       found. Every actual link is a DirectLink MSBuild takeover and every strip
+       is the AotAnywhereStrip task, so these tools are never really invoked -
+       they just have to resolve to an existing executable. Point them at the
+       restored zig; no clang/llvm-objcopy shim is needed.
 
-    <MakeDir Directories="$(ClangShimDir)" />
-    <Copy SourceFiles="$(PrebuiltClangShim);$(PrebuiltClangShim);$(PrebuiltClangShim)" DestinationFiles="$(ClangShimBinary);$(ObjCopyShimBinary);$(LinkShimBinary)" OverwriteReadOnlyFiles="true" />
-    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ClangShimBinary)&quot; &quot;$(ObjCopyShimBinary)&quot; &quot;$(LinkShimBinary)&quot;" />
+       (The SDK's lld version probe, which runs the linker with a version flag,
+       would break on bare zig, but it only fires for LinkerFlavor=lld, which
+       our targets do not use; the glibc/musl/macOS link flavors here skip it.)
 
-  </Target>
-
-  <!-- Fallback: compile the shim on demand for hosts we don't prebuild. -->
-  <Target Name="CompileClangShim"
-          Condition="'$(UsePrebuiltClangShim)' != 'true'"
+       Non-Windows hosts: `command -v` accepts zig's absolute path.
+       Windows hosts: `where /Q` rejects a drive-lettered absolute path (it
+       reads the colon as its path:pattern delimiter), so use bare `zig` with
+       its directory prepended to PATH - the same treatment the shim needed.
+       Windows *targets* never reach here: win-cross links via the
+       AotAnywhereWindowsLink task and a Windows host links win-* natively. -->
+  <Target Name="PointLinkerToZig"
           DependsOnTargets="SetPathToZig"
-          BeforeTargets="SetupOSSpecificProps"
-          Inputs="$(ClangShimSource);$(MSBuildThisFileDirectory)objcopy_shim.zig;$(MSBuildThisFileDirectory)link_shim.zig"
-          Outputs="$(ClangShimBinary);$(ObjCopyShimBinary);$(LinkShimBinary)">
-
-    <MakeDir Directories="$(ClangShimDir)" />
-    <Exec Command="&quot;$(_AotAnywhereZigExe)&quot; build-exe -O ReleaseSafe -femit-bin=&quot;$(ClangShimBinary)&quot; &quot;$(ClangShimSource)&quot;" />
-    <Copy SourceFiles="$(ClangShimBinary);$(ClangShimBinary)" DestinationFiles="$(ObjCopyShimBinary);$(LinkShimBinary)" OverwriteReadOnlyFiles="true" />
-    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))" Command="chmod +x &quot;$(ObjCopyShimBinary)&quot; &quot;$(LinkShimBinary)&quot;" />
-
-  </Target>
-
-  <!-- Make the materialized shim resolvable to SetupOSSpecificProps' tool
-       probes (in Microsoft.NETCore.Native.Unix.targets, used for Linux and
-       macOS targets), which run `command -v "$(CppLinker)"` and the same for
-       the objcopy symbol stripper - `where /Q` on Windows hosts.
-
-       Non-Windows hosts: `command -v` accepts an absolute path, so point
-       CppLinker (Linux and macOS targets) and ObjCopyName (Linux) straight at
-       the shim - no PATH mutation. Linux targets only reach the clang
-       personality as a probe (the actual link is the direct zig invocation);
-       the objcopy personality (llvm-objcopy) serves the Linux symbol strip.
-
-       Windows hosts: `where /Q` rejects an absolute path - it reads the
-       drive-letter colon as its own path:pattern delimiter and fails with
-       "Invalid pattern is specified in path:pattern" - so the shim must be
-       found by bare name (CppLinker's `clang`, ObjCopyName's `llvm-objcopy`,
-       both defaults) with its directory prepended to PATH, as before.
-
-       Windows *targets* are handled elsewhere either way: win-cross points
-       CppLinker at the link personality by absolute path in
-       OverwriteTargetTriple and runs no PATH probe, and a Windows host links
-       win-* natively without importing this file. -->
-  <Target Name="PointLinkerToShim"
-          DependsOnTargets="CopyPrebuiltClangShim;CompileClangShim"
           BeforeTargets="SetupOSSpecificProps">
 
     <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) and !$(RuntimeIdentifier.StartsWith('win'))">
-      <CppLinker>$(ClangShimBinary)</CppLinker>
+      <CppLinker>$(_AotAnywhereZigExe)</CppLinker>
+      <ObjCopyName Condition="$(RuntimeIdentifier.StartsWith('linux'))">$(_AotAnywhereZigExe)</ObjCopyName>
     </PropertyGroup>
 
-    <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows')) and $(RuntimeIdentifier.StartsWith('linux'))">
-      <ObjCopyName>$(ObjCopyShimBinary)</ObjCopyName>
+    <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) and !$(RuntimeIdentifier.StartsWith('win'))">
+      <CppLinker>zig</CppLinker>
+      <ObjCopyName Condition="$(RuntimeIdentifier.StartsWith('linux'))">zig</ObjCopyName>
     </PropertyGroup>
 
-    <PrependPath Condition="$([MSBuild]::IsOSPlatform('Windows'))" Value="$(ClangShimDir)" />
+    <PrependPath Condition="$([MSBuild]::IsOSPlatform('Windows')) and !$(RuntimeIdentifier.StartsWith('win'))" Value="$(ZigPath)" />
 
   </Target>
 
@@ -224,27 +138,20 @@
     </PropertyGroup>
 
     <!-- Without this the link fails much later with a bare "zig is not on the
-         PATH" from the shim. -->
+         PATH". -->
     <Error Condition="'$(UseExternalZig)' == 'false' and !Exists('$(ZigPath)')"
            Text="AotAnywhere: the Zig toolset ('Vezel.Zig.Toolsets.$(HostRuntimeIdentifier)' $(ZigVersion)) was not restored. NuGet cannot restore package references declared inside a package's build targets, so a plain PackageReference to StuDev.AotAnywhere does not fetch Zig on a clean machine. Either reference the package as an MSBuild SDK instead — &lt;Sdk Name=&quot;StuDev.AotAnywhere&quot; Version=&quot;&lt;package version&gt;&quot; /&gt; — which restores Zig automatically, or add &lt;PackageReference Include=&quot;Vezel.Zig.Toolsets.$(HostRuntimeIdentifier)&quot; Version=&quot;$(ZigVersion)&quot; PrivateAssets=&quot;all&quot; GeneratePathProperty=&quot;true&quot; /&gt; alongside it, or set UseExternalZig=true with zig on your PATH." />
 
-    <!-- The single source of truth for the zig executable, used to compile the
-         shim (CompileClangShim), to link directly (AotAnywhereDirectLinkNative),
-         and by the exec'd shim itself (AOTANYWHERE_ZIG below): an absolute path
+    <!-- The single source of truth for the zig executable: an absolute path
          into the restored toolset, or bare `zig` on PATH when zig is external
-         or the toolset path could not be resolved. -->
+         or the toolset path could not be resolved. Used by the DirectLink
+         takeovers, the linker probe (PointLinkerToZig), and the Windows link
+         task's ZigExe. -->
     <PropertyGroup>
       <_AotAnywhereZigExe>zig</_AotAnywhereZigExe>
       <_AotAnywhereZigExe Condition="'$(UseExternalZig)' == 'false' and Exists('$(ZigPath)')">$(ZigPath)/zig</_AotAnywhereZigExe>
       <_AotAnywhereZigExe Condition="'$(UseExternalZig)' == 'false' and Exists('$(ZigPath)') and $([MSBuild]::IsOSPlatform('Windows'))">$(ZigPath)/zig.exe</_AotAnywhereZigExe>
     </PropertyGroup>
-
-    <!-- The shim (exec'd as the linker for macOS and Windows targets) reads
-         this and execs zig by absolute path, so zig no longer needs its
-         directory prepended to PATH. When it resolves to bare `zig` the shim
-         falls back to a PATH lookup, matching the pre-existing external-zig
-         and degraded-restore behavior. -->
-    <SetEnvVar Name="AOTANYWHERE_ZIG" Value="$(_AotAnywhereZigExe)" />
 
   </Target>
 
@@ -278,10 +185,6 @@
            on Linux/Windows hosts), so default to keeping symbols for macOS
            targets. An explicit /p:StripSymbols=true still wins. -->
       <StripSymbols Condition="$(CrossCompileRid.StartsWith('osx'))">false</StripSymbols>
-
-      <!-- Point the ILC targets' MSVC link step at the shim's link
-           personality, which rewrites it to a zig invocation. -->
-      <CppLinker Condition="'$(_AotAnywhereWindowsCross)' == 'true'">$(LinkShimBinary)</CppLinker>
     </PropertyGroup>
 
     <Error Condition="'$(_AotAnywhereWindowsCross)' == 'true' and '$(CrossCompileArch)' == ''"
