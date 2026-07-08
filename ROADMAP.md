@@ -45,7 +45,11 @@ personalities, the NuGet consumption model, and version/drift maintenance.
    `where /Q` rejects a drive-lettered absolute path). Spike a colon-free linker
    name so the shim resolves by bare name without a prepend, then collapse the
    `AOTANYWHERE_ZIG` / `AOTANYWHERE_APPLE_SYSROOT` env channels. Finishes the
-   arc that's ~90% done.
+   arc that's ~90% done. **Spiked:** see `docs/zero-path-mutation.md` — a guarded
+   relative (colon-free) `CppLinker` is the recommended removal, but it hinges on
+   Windows `where.exe` semantics that need validation on the Windows CI leg; the
+   env-channel collapse is feasible via `LinkerArg` but marginal. Not yet
+   implemented.
 7. **Upstream dotnet/runtime ask (exploratory).** The shim exists because ILC's
    linker probes are unskippable and there's no hook to override the link
    invocation. Draft the extension-point proposal / issue. Long shot, but the
