@@ -131,11 +131,15 @@
        pack it into build/tasks/, where
        DirectLink.targets' $(AotAnywhereTasksAssembly) default resolves it. -->
   <Target Name="BuildTasksAssembly">
-    <MSBuild Projects="tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj"
-             Targets="Build"
-             Properties="Configuration=Release">
-      <Output TaskParameter="TargetOutputs" ItemName="_TasksAssembly" />
-    </MSBuild>
+    <!-- Build the task project in its own `dotnet build` process. It is not a
+         ProjectReference, so restoring this nuproj does not restore it, and a
+         nested <MSBuild> Restore+Build does not set up netstandard2.0 reference
+         assemblies correctly - a fresh `dotnet build` restores and builds it
+         properly. -->
+    <Exec Command="dotnet build &quot;$(MSBuildThisFileDirectory)tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj&quot; -c Release" />
+    <ItemGroup>
+      <_TasksAssembly Include="$(MSBuildThisFileDirectory)tasks/AotAnywhere.Tasks/bin/Release/netstandard2.0/AotAnywhere.Tasks.dll" />
+    </ItemGroup>
   </Target>
 
   <Target Name="IncludeTasksAssemblyInPackage"

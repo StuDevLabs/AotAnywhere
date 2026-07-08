@@ -25,10 +25,9 @@ jobs:
 
   publish:
     needs: validate
-    # windows-latest is the only host whose zig cross-compiles all six prebuilt
-    # shims (arm64-Windows zig 0.16 build-exe is broken; see the nuproj), so it
-    # is the one host that can pack the complete package. Matches the shim
-    # (`pack`) job in cross-platform-validation.yml.
+    # The package is host-independent now (one portable netstandard2.0 task DLL,
+    # no per-host prebuilt binaries), so any runner can pack it; windows-latest
+    # is retained only for continuity.
     runs-on: windows-latest
     # Trusted publishing: NuGet/login mints a short-lived key from the OIDC
     # token instead of a long-lived nuget.org API key. contents: write is for

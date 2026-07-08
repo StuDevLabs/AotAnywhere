@@ -10,7 +10,7 @@
 # Cases:
 #   sdk        - <Sdk Name="StuDev.AotAnywhere"/> element: must work zero-config
 #   bare       - plain PackageReference only: must fail with the actionable
-#                AotAnywhere error (not the shim's bare "zig is not on the PATH")
+#                AotAnywhere "Zig toolset was not restored" error
 #   workaround - PackageReference + explicit host Zig toolset: must work
 #                (the documented alternative for PackageReference consumers)
 #
@@ -27,7 +27,7 @@ rm -rf "$work"
 mkdir -p "$work/feed"
 
 version="0.0.1-ci"
-zig_version=$(sed -n "s/.*<ZigVersion[^>]*>\([^<]*\)<\/ZigVersion>.*/\1/p" "$repo_root/src/Crosscompile.targets" | head -1)
+zig_version=$(sed -n "s/.*<ZigVersion[^>]*>\([^<]*\)<\/ZigVersion>.*/\1/p" "$repo_root/src/ZigVersion.props" | head -1)
 
 echo "==> Packing StuDev.AotAnywhere $version (host: $host_rid, zig: $zig_version)"
 dotnet build -t:Pack "$repo_root/src/AotAnywhere.nuproj" -p:Version="$version"
