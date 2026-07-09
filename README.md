@@ -85,9 +85,9 @@ handles that itself, no LLVM install needed).
   builds, link on Windows with MSVC. Details in [Windows targets](docs/windows-targets.md).
 
 - **Windows on ARM64 is not supported as a host.** zig 0.16's aarch64-windows
-  code generation produces a `clang` shim that crashes at startup, so
-  cross-compilation can't run there. It will be revisited when a newer Zig fixes
-  it. (win-arm64 as a *target* is fully supported.)
+  code generation is broken, so Zig can't reliably run there. It will be
+  revisited when a newer Zig fixes it. (win-arm64 as a *target* is fully
+  supported.)
 
 - **Linux ICU dependency.** A cross-compiled binary may need the ICU library on
   the target machine, the same as any globalization-enabled .NET app. See
@@ -130,7 +130,7 @@ and other globalization features.
 - [macOS targets](docs/macos-targets.md) — Apple linker stubs, and signing &
   notarizing for distribution
 - [Windows targets](docs/windows-targets.md) — how win-x64/win-arm64 cross-linking works
-- [Advanced configuration](docs/advanced-configuration.md) — the clang shim,
-  direct zig linking, and using your own Zig
+- [Advanced configuration](docs/advanced-configuration.md) — how linking works
+  (MSBuild takeovers + managed tasks), and using your own Zig
 - [Cross-platform validation](docs/cross-platform-validation.md) — the CI matrix
   that tests every host → target combination

@@ -77,14 +77,10 @@ for target in "${TARGET_ARRAY[@]}"; do
   # Determine if this is a cross-compilation or native build
   if [[ "$rid" == linux-* ]]; then
     echo "Cross-compiling to Linux target using AotAnywhere..."
-    # Deliberately no StripSymbols override: it defaults to true
-    # for Linux targets and is served by the shim's llvm-objcopy
-    # personality, so this exercises the strip pipeline on every
-    # host x target combination.
-    #
-    # No fallback tripwire needed: the clang personality hard-errors on any
-    # Linux link invocation, so a publish that silently routed through the
-    # shim instead of the direct zig link fails outright.
+    # Deliberately no StripSymbols override: it defaults to true for Linux
+    # targets and is served by the AotAnywhereStrip task's ELF surgery, so
+    # this exercises the strip pipeline on every host x target combination.
+    # (The validate job runs the stripped binaries, so a bad strip is caught.)
     if dotnet publish "$project" \
       -r "$rid" \
       ${variant_args[@]+"${variant_args[@]}"} \
@@ -137,7 +133,7 @@ for target in "${TARGET_ARRAY[@]}"; do
     echo "Publishing Windows target..."
     # On Windows hosts the SDK links win-* natively with MSVC and the
     # package stays inert - which is itself worth validating. On Linux and
-    # macOS hosts the shim's link personality drives zig's MinGW link.
+    # macOS hosts the AotAnywhereWindowsLink task drives zig's MinGW link.
     if dotnet publish test/Hello.csproj \
       -r "$target" \
       -c Release \

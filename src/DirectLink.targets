@@ -1,10 +1,9 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <!-- The link flow for Linux targets: link by invoking zig directly
-       instead of having the ILC targets call a clang-impersonating shim
-       found on PATH. This is the only Linux link flow (the
-       AotAnywhereDirectLink=false escape hatch back to the shim was
-       retired); the shim remains the flow for macOS and Windows targets.
+       instead of having the ILC targets call a linker on PATH. macOS links
+       the same way (AotAnywhereDirectLinkMacNative) and Windows via the
+       AotAnywhereWindowsLink task, so there is no native shim any more.
        NativeLib=Static never links through a C compiler at all - the SDK
        archives with $(CppLibCreator).
 
@@ -25,12 +24,34 @@
        finds its output up to date and skips itself.
 
        Scope: Linux targets (glibc and musl), executables and shared
-       libraries. Other RIDs keep the shim flow.
-       SetupOSSpecificProps' linker probes still resolve the clang shim -
-       by absolute path on non-Windows hosts, or via PATH on Windows hosts
-       (see PointLinkerToShim) - so the shim materialization is unchanged;
-       the objcopy personality also still performs the symbol strip (zig
-       cannot strip ELF), invoked here by absolute path. -->
+       libraries.
+       SetupOSSpecificProps' linker probes resolve to the real zig (see
+       PointLinkerToZig); the symbol strip is done by the AotAnywhereStrip
+       task (zig cannot strip ELF).
+
+       Linux and macOS take the link over in MSBuild here; Windows takes it
+       over too but through the AotAnywhereWindowsLink task (see below) - the
+       MSVC->zig translation and /MERGE COFF surgery need real imperative code.
+       All three replace the link.exe/clang shim personalities. -->
+
+  <!-- The managed link task (src/tasks/AotAnywhere.Tasks). Defaults resolve the
+       DLL and the MSVC glue source next to this file's packed location
+       (build/); a source/dev build overrides $(AotAnywhereTasksAssembly) to the
+       task project's build output. UsingTask with a missing AssemblyFile is
+       harmless until the task is invoked, so non-Windows links never need it. -->
+  <PropertyGroup>
+    <AotAnywhereTasksAssembly Condition="'$(AotAnywhereTasksAssembly)' == ''">$(MSBuildThisFileDirectory)tasks/AotAnywhere.Tasks.dll</AotAnywhereTasksAssembly>
+    <!-- Source/dev consumption (this repo's test project, CI's build matrix)
+         imports these targets straight from src/, where the packed
+         build/tasks/ DLL does not exist; fall back to the task project's build
+         output. Built once up front (CI 'Build link task' step; locally
+         `dotnet build src/tasks/AotAnywhere.Tasks`). -->
+    <_AotAnywhereTasksDevDll>$(MSBuildThisFileDirectory)tasks/AotAnywhere.Tasks/bin/Release/netstandard2.0/AotAnywhere.Tasks.dll</_AotAnywhereTasksDevDll>
+    <AotAnywhereTasksAssembly Condition="!Exists('$(AotAnywhereTasksAssembly)') and Exists('$(_AotAnywhereTasksDevDll)')">$(_AotAnywhereTasksDevDll)</AotAnywhereTasksAssembly>
+    <AotAnywhereMsvcGlueSource Condition="'$(AotAnywhereMsvcGlueSource)' == ''">$(MSBuildThisFileDirectory)aotanywhere-msvc-glue.c</AotAnywhereMsvcGlueSource>
+  </PropertyGroup>
+  <UsingTask TaskName="AotAnywhere.Tasks.AotAnywhereWindowsLink" AssemblyFile="$(AotAnywhereTasksAssembly)" />
+  <UsingTask TaskName="AotAnywhere.Tasks.AotAnywhereStrip" AssemblyFile="$(AotAnywhereTasksAssembly)" />
 
   <PropertyGroup>
     <_AotAnywhereDirectLinkActive>false</_AotAnywhereDirectLinkActive>
@@ -40,7 +61,7 @@
   <Target Name="AotAnywhereDirectLinkNative"
           Condition="'$(_AotAnywhereDirectLinkActive)' == 'true'"
           BeforeTargets="LinkNative"
-          DependsOnTargets="SetupOSSpecificProps;OverwriteTargetTriple;SetPathToZig;PointLinkerToShim"
+          DependsOnTargets="SetupOSSpecificProps;OverwriteTargetTriple;SetPathToZig;PointLinkerToZig"
           Inputs="$(NativeObject);@(NativeLibrary)"
           Outputs="$(NativeBinary)">
 
@@ -94,14 +115,231 @@
     <!-- remove executable flag, as the SDK's LinkNative does for libraries -->
     <Exec Command="chmod 644 &quot;$(NativeBinary)&quot;" Condition="'$(NativeLib)' == 'Shared' and !$([MSBuild]::IsOSPlatform('Windows'))" />
 
-    <!-- The SDK's strip steps, verbatim, pointed at the objcopy personality
-         of the shim by absolute path instead of an llvm-objcopy from PATH. -->
-    <Exec Condition="'$(StripSymbols)' == 'true' and '$(NativeDebugSymbols)' == 'true'"
-          Command="&quot;$(ObjCopyShimBinary)&quot; --only-keep-debug &quot;$(NativeBinary)&quot; &quot;$(NativeBinary)$(NativeSymbolExt)&quot;" />
-    <Exec Condition="'$(StripSymbols)' == 'true'"
-          Command="&quot;$(ObjCopyShimBinary)&quot; --strip-debug --strip-unneeded &quot;$(NativeBinary)&quot;" />
-    <Exec Condition="'$(StripSymbols)' == 'true' and '$(NativeDebugSymbols)' == 'true'"
-          Command="&quot;$(ObjCopyShimBinary)&quot; --add-gnu-debuglink=&quot;$(NativeBinary)$(NativeSymbolExt)&quot; &quot;$(NativeBinary)&quot;" />
+    <!-- The SDK's strip steps (only-keep-debug sidecar, strip, add-gnu-debuglink)
+         done by the managed AotAnywhereStrip task instead of the shim's
+         llvm-objcopy personality. zig cannot strip ELF, so this is the ELF
+         surgery ported from objcopy_shim.zig. -->
+    <AotAnywhereStrip Condition="'$(StripSymbols)' == 'true'"
+                      Binary="$(NativeBinary)"
+                      SymbolFile="$(NativeBinary)$(NativeSymbolExt)"
+                      KeepDebugSymbols="$(NativeDebugSymbols)" />
+
+  </Target>
+
+  <!-- PROTOTYPE: the macOS equivalent of AotAnywhereDirectLinkNative, taking
+       the link over in MSBuild instead of routing LinkNative through the
+       clang-impersonating shim (clang_shim.zig: processMacosCross /
+       processMacosNative). It reconstructs the exact CustomLinkerArg list the
+       SDK's LinkNative builds for an Apple target (object, -o, exported
+       symbols, dead_strip, @(LinkerArg) already carrying the target triple
+       OverwriteTargetTriple injects, discard-all, gc-sections), then folds in
+       the same zig fixups the clang shim applied at spawn time, and runs
+       `zig cc` by absolute path.
+
+       Two modes, matching the shim:
+         - cross (non-macOS host): link against the bundled Apple .tbd sysroot
+           stubs ($(AotAnywhereAppleSysroot), from SetAppleSysroot); rewrite
+           -L/usr/lib/swift into the sysroot; drop -ld_classic.
+         - native (macOS host): -isysroot the real SDK from `xcrun`; drop
+           -ld_classic.
+       Both append the Swift overlay dylibs when the Swift runtime is linked
+       (zig does not honour the LC_LINKER_OPTION autolinks) and compile in the
+       GS-cookie page pad.
+
+       Same seam as the Linux target: runs BeforeTargets="LinkNative" with
+       LinkNative's Inputs/Outputs, so once $(NativeBinary) exists LinkNative's
+       incremental check skips itself and the shim's macOS path never runs.
+
+       Not yet handled (prototype scope): the no-sysroot degraded cross branch
+       (the bundled sysroot is always present by default) and StripSymbols=true
+       for Apple (defaults false for osx in OverwriteTargetTriple; the SDK's
+       dsymutil+strip reject zig-linked binaries). NativeLib=Static still
+       archives via $(CppLibCreator), untouched. -->
+
+  <PropertyGroup>
+    <_AotAnywhereMacDirectLinkActive>false</_AotAnywhereMacDirectLinkActive>
+    <_AotAnywhereMacDirectLinkActive Condition="$(RuntimeIdentifier.StartsWith('osx')) and '$(NativeLib)' != 'Static'">true</_AotAnywhereMacDirectLinkActive>
+    <_AotAnywhereMacHostLink>false</_AotAnywhereMacHostLink>
+    <_AotAnywhereMacHostLink Condition="$([MSBuild]::IsOSPlatform('OSX'))">true</_AotAnywhereMacHostLink>
+  </PropertyGroup>
+
+  <!-- Resolve the effective sysroot. Impure (shells out to xcrun on a mac
+       host), so it is kept out of the pure arg computation below: tests drive
+       _AotAnywhereComputeMacLinkArgs directly with an injected $(_MacSysroot)
+       and never reach xcrun. -->
+  <Target Name="_AotAnywhereResolveMacSysroot"
+          DependsOnTargets="SetAppleSysroot">
+
+    <!-- Native links need the real SDK path; the shim shelled out to
+         `xcrun` (show-sdk-path), so do the same here. -->
+    <Exec Condition="'$(_AotAnywhereMacHostLink)' == 'true'"
+          Command="xcrun --show-sdk-path"
+          ConsoleToMSBuild="true" ContinueOnError="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_AotAnywhereMacSdkPath" />
+    </Exec>
+
+    <PropertyGroup>
+      <!-- cross uses the bundled .tbd stub sysroot (SetAppleSysroot);
+           native uses the xcrun SDK path. -->
+      <_MacSysroot Condition="'$(_AotAnywhereMacHostLink)' != 'true'">$(AotAnywhereAppleSysroot)</_MacSysroot>
+      <_MacSysroot Condition="'$(_AotAnywhereMacHostLink)' == 'true'">$(_AotAnywhereMacSdkPath)</_MacSysroot>
+    </PropertyGroup>
+
+  </Target>
+
+  <!-- PURE: assemble the zig cc argument list (@(_MacLinkArg)) for a macOS
+       link from the resolved $(_MacSysroot), $(_AotAnywhereMacHostLink), the
+       SDK-computed @(LinkerArg), and the object/output/exports properties. No
+       SDK-target dependencies and no process launches, so
+       AotAnywhere.MSBuild.Tests invokes it directly with injected inputs and
+       asserts on @(_MacLinkArg) - the regression guard for the arg-framing
+       coupling documented below. -->
+  <Target Name="_AotAnywhereComputeMacLinkArgs">
+
+    <PropertyGroup>
+      <!-- The Swift crypto bindings autolink the overlay dylibs through
+           LC_LINKER_OPTION load commands, which zig's linker ignores; detect
+           the runtime the same way the shim does (a -lswiftCore on the line)
+           and pass the overlays explicitly below. @(LinkerArg) is joined into a
+           property first: item expansion inside a Condition does not evaluate,
+           so testing the property with .Contains is what actually works. -->
+      <_MacAllLinkerArgs>@(LinkerArg)</_MacAllLinkerArgs>
+      <_MacLinksSwift>false</_MacLinksSwift>
+      <_MacLinksSwift Condition="$(_MacAllLinkerArgs.Contains('-lswiftCore'))">true</_MacLinksSwift>
+
+      <_MacPadFile>$(MSBuildThisFileDirectory)aotanywhere-gs-pad.c</_MacPadFile>
+    </PropertyGroup>
+
+    <!-- The Apple framing LinkNative wraps around @(LinkerArg): the object,
+         the output, and the exported-symbols list. Everything else (the ILC
+         libs, -gz, -Wl,-rpath, system libs, frameworks, and the target triple
+         OverwriteTargetTriple injects) already lives inside @(LinkerArg), so it
+         is carried verbatim regardless of SDK version.
+
+         Deliberately NOT reproduced: the GNU-ld discard-all / gc-sections
+         flags. The main-branch (net11) SDK adds those for every non-Windows
+         link, but
+         they are GNU-ld options; the net8 pack this consumer builds against
+         omits them, and passing them to zig's macho linker miscompiles the
+         binary (startup SIGSEGV). This is the "must mirror the SDK's link line"
+         coupling the DirectLink approach trades for transparency: the framing
+         has to track the pack version, unlike the shim, which transforms
+         whatever the SDK actually emitted. Keeping the framing minimal and
+         letting @(LinkerArg) carry the bulk contains that coupling. -->
+    <ItemGroup>
+      <_MacCore Include="&quot;$(NativeObject)&quot;" />
+      <_MacCore Include="-o &quot;$(NativeBinary)&quot;" />
+      <_MacCore Include="-exported_symbols_list &quot;$(ExportsFile)&quot;" Condition="'$(ExportsFile)' != ''" />
+      <_MacCore Include="-exported_symbols_list /dev/null" Condition="'$(OutputType)' == 'exe' and '$(ExportsFile)' == ''" />
+      <_MacCore Include="@(LinkerArg)" />
+    </ItemGroup>
+
+    <!-- The shim's fixups, expressed as MSBuild item transforms. -ld_classic
+         is unsupported by zig's linker; -L/usr/lib/swift only makes sense on a
+         real host, so on a cross build it is redirected into the sysroot via
+         the prefix below. -->
+    <ItemGroup>
+      <_MacDrop Include="-ld_classic" />
+      <_MacDrop Include="-L/usr/lib/swift" Condition="'$(_AotAnywhereMacHostLink)' != 'true'" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <!-- cross: point framework/lib search at the bundled stub sysroot. -->
+      <_MacPrefix Condition="'$(_AotAnywhereMacHostLink)' != 'true'" Include="-F$(_MacSysroot)/System/Library/Frameworks" />
+      <_MacPrefix Condition="'$(_AotAnywhereMacHostLink)' != 'true'" Include="-L$(_MacSysroot)/usr/lib" />
+      <_MacPrefix Condition="'$(_AotAnywhereMacHostLink)' != 'true'" Include="-L$(_MacSysroot)/usr/lib/swift" />
+      <!-- native: isysroot the real SDK (one item; space-joined into the
+           command line, as with `-o "..."`). -->
+      <_MacPrefix Condition="'$(_AotAnywhereMacHostLink)' == 'true' and '$(_MacSysroot)' != ''" Include="-isysroot $(_MacSysroot)" />
+      <_MacPrefix Condition="'$(_AotAnywhereMacHostLink)' == 'true' and '$(_MacSysroot)' != ''" Include="-L$(_MacSysroot)/usr/lib" />
+      <_MacPrefix Condition="'$(_AotAnywhereMacHostLink)' == 'true' and '$(_MacSysroot)' != ''" Include="-L$(_MacSysroot)/usr/lib/swift" />
+      <_MacPrefix Condition="'$(_AotAnywhereMacHostLink)' == 'true' and '$(_MacSysroot)' != ''" Include="-F$(_MacSysroot)/System/Library/Frameworks" />
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(_MacLinksSwift)' == 'true'">
+      <_MacSwiftOverlay Include="-Wl,-dead_strip_dylibs;-lswiftCoreFoundation;-lswiftDarwin;-lswiftDispatch;-lswiftIOKit;-lswiftObjectiveC;-lswiftXPC;-lswift_Builtin_float;-lswift_errno;-lswift_math;-lswift_signal;-lswift_stdio;-lswift_time;-lswiftsys_time;-lswiftunistd" />
+    </ItemGroup>
+
+    <!-- Final line: sysroot prefix, then the SDK's args (minus the drops),
+         then the Swift overlays, then the GS-cookie pad source. -->
+    <ItemGroup>
+      <_MacLinkArg Include="@(_MacPrefix)" />
+      <_MacLinkArg Include="@(_MacCore)" Exclude="@(_MacDrop)" />
+      <_MacLinkArg Include="@(_MacSwiftOverlay)" />
+      <_MacLinkArg Include="&quot;$(_MacPadFile)&quot;" />
+    </ItemGroup>
+
+  </Target>
+
+  <!-- The macOS link takeover: resolve the sysroot, compute the args (the two
+       targets above), then run zig. Mirrors AotAnywhereDirectLinkNative's seam
+       (BeforeTargets="LinkNative", LinkNative's Inputs/Outputs). -->
+  <Target Name="AotAnywhereDirectLinkMacNative"
+          Condition="'$(_AotAnywhereMacDirectLinkActive)' == 'true'"
+          BeforeTargets="LinkNative"
+          DependsOnTargets="SetupOSSpecificProps;OverwriteTargetTriple;SetPathToZig;PointLinkerToZig;_AotAnywhereResolveMacSysroot;_AotAnywhereComputeMacLinkArgs"
+          Inputs="$(NativeObject);@(NativeLibrary)"
+          Outputs="$(NativeBinary)">
+
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName($(NativeBinary)))" />
+
+    <Warning Condition="'$(_AotAnywhereMacHostLink)' == 'true' and '$(_MacSysroot)' == ''"
+             Text="AotAnywhere: could not resolve the macOS SDK via xcrun; linking without -isysroot." />
+
+    <Message Importance="high" Text="AotAnywhere: linking $(NativeBinary) with zig directly (macOS $([MSBuild]::ValueOrDefault('$(_AotAnywhereMacHostLink)', 'false').Replace('true','native').Replace('false','cross')))" />
+
+    <Exec Command="&quot;$(_AotAnywhereZigExe)&quot; cc @(_MacLinkArg, ' ')"
+          CustomWarningRegularExpression="$(IlcCppLinkerCustomWarningRegularExpression)" />
+
+    <!-- remove executable flag, as the SDK's LinkNative does for libraries -->
+    <Exec Command="chmod 644 &quot;$(NativeBinary)&quot;" Condition="'$(NativeLib)' == 'Shared'" />
+
+  </Target>
+
+  <!-- The Windows link takeover: hand the MSVC-style link tokens to the managed
+       AotAnywhereWindowsLink task, which translates them to a `zig cc` MinGW
+       cross-link, applies /MERGE via COFF section renames, writes the stub
+       archives + glue, and runs zig. Replaces link_shim.zig's link.exe
+       personality (reached today by pointing $(CppLinker) at the shim). Same
+       BeforeTargets="LinkNative" seam as the Linux/macOS takeovers.
+
+       The MSVC framing the SDK's LinkNative writes into link.rsp for a Windows
+       target is reconstructed here as items (unquoted - these are MSBuild item
+       values, not a shell line); @(LinkerArg) carries the rest, including the
+       target triple OverwriteTargetTriple injects and the /MERGE, /SUBSYSTEM,
+       /STACK options ILC emits. -->
+  <PropertyGroup>
+    <_AotAnywhereWinDirectLinkActive>false</_AotAnywhereWinDirectLinkActive>
+    <_AotAnywhereWinDirectLinkActive Condition="'$(_AotAnywhereWindowsCross)' == 'true' and '$(NativeLib)' != 'Static'">true</_AotAnywhereWinDirectLinkActive>
+  </PropertyGroup>
+
+  <Target Name="AotAnywhereDirectLinkWindows"
+          Condition="'$(_AotAnywhereWinDirectLinkActive)' == 'true'"
+          BeforeTargets="LinkNative"
+          DependsOnTargets="SetupOSSpecificProps;OverwriteTargetTriple;SetPathToZig"
+          Inputs="$(NativeObject);@(NativeLibrary)"
+          Outputs="$(NativeBinary)">
+
+    <ItemGroup>
+      <!-- Quoted exactly as the SDK's LinkNative writes these into link.rsp, so
+           the task's tokenizer keeps paths-with-spaces intact. -->
+      <_WinMsvcArg Include="&quot;$(NativeObject)&quot;" />
+      <_WinMsvcArg Include="/OUT:&quot;$(NativeBinary)&quot;" />
+      <_WinMsvcArg Include="/IMPLIB:&quot;$(NativeImportLibrary)&quot;" Condition="'$(NativeLib)' == 'Shared' and '$(NativeImportLibrary)' != ''" />
+      <_WinMsvcArg Include="/DEF:&quot;$(ExportsFile)&quot;" Condition="'$(ExportsFile)' != ''" />
+      <_WinMsvcArg Include="/LIBPATH:&quot;%(AdditionalNativeLibraryDirectories.Identity)&quot;" Condition="'@(AdditionalNativeLibraryDirectories)' != ''" />
+      <_WinMsvcArg Include="@(LinkerArg)" />
+    </ItemGroup>
+
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName($(NativeBinary)))" />
+
+    <Message Importance="high" Text="AotAnywhere: linking $(NativeBinary) with zig directly (Windows, via task)" />
+
+    <AotAnywhereWindowsLink
+        MsvcArgs="@(_WinMsvcArg)"
+        ZigExe="$(_AotAnywhereZigExe)"
+        SupportDir="$(NativeIntermediateOutputPath)"
+        GlueSource="$(AotAnywhereMsvcGlueSource)" />
 
   </Target>
 

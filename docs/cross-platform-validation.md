@@ -42,9 +42,7 @@ invocation, the only Linux link flow — every host also publishes decorated
 `linux-x64` variants (see `build-targets.sh`): `lib-linux-x64` (a
 `NativeLib=Shared` library, loaded and called via python ctypes during
 validation) and `linux-x64-selftest` (a net10.0 build exercising real
-ICU, zlib and OpenSSL at run time via `--selftest`). The clang shim
-hard-errors on any Linux link invocation, so a publish that silently
-routed through the retired shim link flow fails outright.
+ICU, zlib and OpenSSL at run time via `--selftest`).
 
 ### 2. Build Process
 For each host-target combination:
@@ -62,7 +60,7 @@ A dedicated job generates a throwaway self-signed Developer ID-style certificate
 - Tests x64 binaries on Ubuntu x64 and ARM64 binaries on Ubuntu ARM64 runners
 - Tests ARMv7 binaries under QEMU on the x64 runner, inside `linux/arm/v7` containers (Debian for the glibc target, Alpine for musl) — there is no hosted armv7 runner, and the hosted arm64 runners dropped 32-bit execution
 - Tests macOS binaries on appropriate macOS runners (x64 on macos-15-intel, ARM64 on macos-latest)
-- Tests Windows binaries on Windows runners (win-x64 on windows-latest, win-arm64 on windows-11-arm); binaries from the Windows host are MSVC-linked, the rest are zig/MinGW-linked by the shim's link personality
+- Tests Windows binaries on Windows runners (win-x64 on windows-latest, win-arm64 on windows-11-arm); binaries from the Windows host are MSVC-linked, the rest are zig/MinGW-linked by the `AotAnywhereWindowsLink` task
 - On macOS runners, verifies code signatures with `codesign --verify --strict` (and checks the `osx-x64` binaries carry the CI test certificate) before running
 - Verifies "Hello World" output
 - Reports success/failure rates

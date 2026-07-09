@@ -34,28 +34,13 @@ automatically — the notes say where.
       *Automated:* the `zig-version-sync` job fails the PR if either drifts from
       `ZigVersion.props`. Run `eng/check-zig-version-sync.sh` locally to check.
 
-- [ ] **`zig test` the shims passes with the new toolchain.** The shim sources
-      (`clang_shim.zig`, `objcopy_shim.zig`) must still compile and pass — zig's
-      std APIs churn between releases.
-      *Automated:* the `shim-tests` job in `cross-platform-validation.yml` runs
-      `dotnet build -t:TestShims src/AotAnywhere.nuproj` on every PR. Run the
-      same command locally to check before pushing.
-
-- [ ] **Prebuilt shims rebuild for all host RIDs.** `BuildClangShims` in
-      `AotAnywhere.nuproj` cross-compiles a shim for every host RID from one
-      machine.
-      *Automated:* the `pack` job builds the package (all host shims) on every
-      PR.
-
-- [ ] **Re-test the aarch64-windows codegen bug.** zig 0.16's aarch64-windows
-      `build-exe` produces a shim that crashes at startup, so `win-arm64` is
-      omitted as a host (`ShimTarget` in the nuproj, the CI matrix, and the
-      README all leave it out). If a newer zig fixes it, re-add `win-arm64` to
-      all three and confirm a cross-compiled shim runs on real arm64 Windows.
-
-- [ ] **Re-check `zig objcopy` ELF-to-ELF support.** The bundled `objcopy_shim`
-      exists because `zig objcopy` cannot strip ELF-to-ELF (issue #27). If a
-      newer zig gains it, the shim may be simplifiable.
+- [ ] **`win-arm64` host is still not viable — re-evaluate.** `win-arm64` is a
+      supported *target* (cross-compiled from other hosts), but it is left out of
+      the CI *host* matrix and the README because zig 0.16's aarch64-windows
+      self-hosted code generation is broken. That originally broke building the
+      native shim; the shim is gone now, and links go through `zig cc` (the LLVM
+      backend), so an arm64-Windows *host* may now work. If you have access to
+      one, test publishing from it; if it works, add it as a host.
 
 - [ ] **Full cross-platform validation matrix green.** The `build` and
       `validate` jobs in `cross-platform-validation.yml` exercise every host ×
@@ -68,8 +53,9 @@ automatically — the notes say where.
   opens a PR that bumps the `<ZigVersion>` value in `src/ZigVersion.props` (the
   single pin). The PR body carries this checklist.
 - The **CI already covers most of the checklist** on any PR (`zig-version-sync`,
-  `shim-tests`, `pack`, `build`, `validate`). The `zig-version-sync` guard
-  catches the out-of-band pins Renovate does not touch. The manual items are the
-  ones a green run cannot prove: the win-arm64 codegen and `zig objcopy`
-  re-checks, which only matter when deciding whether a bump lets us *remove* a
-  workaround.
+  `msbuild-logic-tests`, `build`, `validate`). The `build`/`validate` matrix runs
+  a real `zig cc` link for every host × target and executes the resulting
+  binaries, so any zig behaviour change that affects a link surfaces there. The
+  `zig-version-sync` guard catches the out-of-band pins Renovate does not touch.
+  The one manual item is the `win-arm64` host re-evaluation, which a green run
+  cannot prove because no arm64-Windows host is in the matrix.
