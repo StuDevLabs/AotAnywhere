@@ -180,18 +180,12 @@ jobs:
             9.0.x
             10.0.x
 
-      # The publishes below restore the Vezel zig toolset for this host plus
-      # ILCompiler/runtime packs for all eight target RIDs - several hundred
-      # MB from nuget.org on every run without this cache. build-targets.sh
-      # gives each concurrent group its own NuGet folders under
-      # $RUNNER_TEMP/nuget (see below), so cache that whole tree.
-      - name: Cache NuGet packages
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}/nuget
-          key: nuget-publish-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src/AotAnywhere.nuproj', 'src/Crosscompile.targets', 'test/Hello.csproj', 'test/HelloLib/HelloLib.csproj') }}
-          restore-keys: |
-            nuget-publish-${{ runner.os }}-${{ runner.arch }}-
+      # No NuGet caching here: the per-group NuGet folders under
+      # $RUNNER_TEMP/nuget (see build-targets.sh) add up to ~5GB per host,
+      # so three host caches blow the 10GB repo limit and evict each other -
+      # chronic misses, while the post-job save alone cost 3-5 minutes.
+      # Downloading from nuget.org's CDN each run is cheaper than either
+      # side of that cache.
 
       - name: Download test signing certificate
         uses: actions/download-artifact@v8

@@ -25,8 +25,9 @@ export PATH="$PWD/.rcodesign:$PATH"
 # - producing "Directory not empty", missing-temp-file, and http-cache
 # `.dat-new` errors. Serial pre-warming doesn't help (macOS still re-extracts),
 # so isolate the folders per group instead: nothing shared, no collision.
-# $RUNNER_TEMP is a native path on every host, so this is safe on Windows too,
-# and the cache step archives the whole $RUNNER_TEMP/nuget tree.
+# $RUNNER_TEMP is a native path on every host, so this is safe on Windows too.
+# Each group re-downloads its packages from nuget.org every run; that's
+# deliberate (see the no-caching note in cross-platform-validation.yml).
 #
 # (coreclr's other shared resource, its /tmp/.dotnet/shm/session<id> dir, is a
 # FIXED path that TMPDIR does NOT relocate, so it can't be isolated the same
