@@ -239,12 +239,18 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
                 total.Renamed += r.Renamed;
                 total.SkippedLong += r.SkippedLong;
                 total.SkippedInitialized += r.SkippedInitialized;
+                total.SkippedGrouped += r.SkippedGrouped;
             }
 
             if (total.SkippedLong > 0)
                 Log.LogWarning($"AotAnywhere /MERGE: {total.SkippedLong} section(s) in '{path}' not merged (target name over 8 chars).");
             if (total.SkippedInitialized > 0)
                 Log.LogWarning($"AotAnywhere /MERGE: {total.SkippedInitialized} initialized section(s) in '{path}' not merged into .bss.");
+            // Expected on every net10.0+ Windows link (/MERGE:.managedcode=.text),
+            // so this is a message, not a warning - see CoffSectionRenamer.
+            if (total.SkippedGrouped > 0)
+                Log.LogMessage(MessageImportance.Normal,
+                    $"AotAnywhere /MERGE: {total.SkippedGrouped} $-grouped section(s) in '{path}' left unmerged; lld would not preserve their order.");
             if (total.Renamed == 0) continue;
 
             // The index prefix keeps same-named objects from different dirs apart.

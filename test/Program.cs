@@ -5,6 +5,28 @@ if (args is ["--selftest"])
     return SelfTest.Run();
 #endif
 
+// GC + exception smoke before the greeting: a mislinked binary can boot and
+// print fine yet die on its first garbage collection or unwind - zig's macOS
+// link used to fold away the __managedcode range brackets and drop the
+// .dotnet_eh_table GC-info section, and nothing in a print-and-exit run ever
+// noticed (the jaz SIGABRT, crash-analysis/FINDINGS-root-cause-zig-managedcode.md).
+// Force both paths in every CI run of this binary; stay silent on success so
+// the "Hello World" output contract holds.
+var junk = new object[64];
+for (var i = 0; i < 4096; i++)
+{
+    junk[i % junk.Length] = new byte[512];
+    if (i % 1024 == 0)
+    {
+        try { throw new InvalidOperationException("gc-smoke"); }
+        catch (InvalidOperationException) { }
+    }
+}
+GC.Collect();
+GC.WaitForPendingFinalizers();
+if (junk[63] is null)
+    return 1;
+
 Console.WriteLine("Hello World");
 return 0;
 
@@ -66,6 +88,14 @@ static class SelfTest
             System.Security.Cryptography.HashAlgorithmName.SHA256,
             System.Security.Cryptography.RSASignaturePadding.Pkcs1))
             return Fail("OpenSSL: RSA verify failed");
+
+        // GC + funclet smoke: the selftest path returns before the default
+        // path's smoke runs, so force a collection and an unwind here too
+        // (see the comment above Hello World).
+        try { throw new InvalidOperationException("gc-smoke"); }
+        catch (InvalidOperationException) { }
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
 
         Console.WriteLine("selftest ok");
         return 0;

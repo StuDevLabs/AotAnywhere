@@ -20,10 +20,18 @@ Things to know:
   no extra runtime.
 - A `.pdb` is produced next to the binary and copied to the publish directory,
   as on Windows.
-- `/MERGE` is honored — the task renames the affected sections in copies of the
-  input objects, which makes lld produce the same merged section layout as
-  link.exe — and the `/GS` stack cookie is randomized at startup, mirroring
-  MSVC's `__security_init_cookie`.
+- `/MERGE` is honored for plain sections — the task renames them in copies of
+  the input objects so lld produces the same merged layout as link.exe. The one
+  exception is `$`-grouped sections, most visibly ILC's
+  `/MERGE:.managedcode=.text` on net10.0 and later: link.exe keeps a merged
+  group in `$`-suffix order, lld does not once the group shares an output
+  section with other contributors, and the reordering pulls the bootstrapper's
+  `.managedcode$A`/`$Z` brackets off the managed code — leaving a managed-code
+  range a few bytes wide, which fail-fasts the first GC or exception. Those
+  sections are left unmerged, keeping `.managedcode` as its own section (the
+  shape .NET 8 emits anyway); the image comes out the same size either way.
+- The `/GS` stack cookie is randomized at startup, mirroring MSVC's
+  `__security_init_cookie`.
 - `/OPT:REF` and `/OPT:ICF` (dead-code stripping and identical-code folding)
   are honored with a second link pass — zig cc cannot pass COFF `/OPT` flags
   through, so the task replays the underlying lld-link invocation with the

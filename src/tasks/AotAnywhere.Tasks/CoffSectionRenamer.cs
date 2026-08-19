@@ -10,18 +10,36 @@ public struct RenameResult
     /// Initialized sections that /MERGE wanted in .bss - renaming those would
     /// silently grow the uninitialized image, so they stay put.
     public int SkippedInitialized;
+    /// `$`-grouped sections (`name$suffix`), which are never merged - see the
+    /// note on RenameSections.
+    public int SkippedGrouped;
 }
 
 /// Implements /MERGE by renaming COFF sections in the object image, since
-/// `zig cc` cannot pass /MERGE through to lld. Faithful port of
-/// link_shim.zig's renameCoffSections/coffSectionName.
+/// `zig cc` cannot pass /MERGE through to lld.
 public static class CoffSectionRenamer
 {
     const uint IMAGE_SCN_CNT_UNINITIALIZED_DATA = 0x80;
 
-    /// Renames sections named `from` (or `from$suffix`) to `to` (keeping the
-    /// suffix) directly in `data`. Malformed or non-object inputs (import
-    /// members, resources) are left untouched. Mutates `data` in place.
+    /// Renames sections named exactly `from` to `to` directly in `data`.
+    /// `$`-grouped members (`from$suffix`) are deliberately left alone, and
+    /// malformed or non-object inputs (import members, resources) are
+    /// untouched. Mutates `data` in place.
+    ///
+    /// Why grouped sections stay put: link.exe lays a merged group out in
+    /// `$`-suffix order, so ILC's `/MERGE:.managedcode=.text` still leaves the
+    /// bootstrapper's `.managedcode$A`/`$Z` brackets around the managed code
+    /// (`.managedcode$I`) once all three are called `.text$*`. lld does not
+    /// reproduce that ordering inside an output section that already has other
+    /// contributors: renaming them puts `.text$A`/`.text$Z` a few bytes apart
+    /// near the start of `.text` and `.text$I` about a megabyte further on
+    /// (measured on net10.0 win-arm64). The bootstrapper then registers a
+    /// 16-byte managed-code range, `GetCodeManagerForAddress` finds no manager
+    /// for any managed PC, and the first stack walk - the first GC or the
+    /// first exception - fail-fasts. Left unmerged, `.managedcode` keeps its
+    /// own output section, where lld does order `$A`/`$I`/`$Z` correctly (the
+    /// net8.0 win-x64 shape, whose link.rsp carries no /MERGE at all). It
+    /// costs nothing: the merged and unmerged images come out the same size.
     public static RenameResult RenameSections(byte[] data, string from, string to)
     {
         var result = new RenameResult();
@@ -44,17 +62,17 @@ public static class CoffSectionRenamer
             var name = SectionName(data, (int)header, strtabOffset);
             if (name == null) continue;
 
-            var suffix = "";
             if (name != from)
             {
                 if (name.Length <= from.Length ||
                     !name.StartsWith(from, StringComparison.Ordinal) ||
                     name[from.Length] != '$')
                     continue;
-                suffix = name.Substring(from.Length);
+                result.SkippedGrouped++;
+                continue;
             }
 
-            if (to.Length + suffix.Length > 8) { result.SkippedLong++; continue; }
+            if (to.Length > 8) { result.SkippedLong++; continue; }
 
             var characteristics = Rd32(data, (int)header + 36);
             if (to == ".bss" && (characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA) == 0)
@@ -63,9 +81,8 @@ public static class CoffSectionRenamer
                 continue;
             }
 
-            var newName = to + suffix;
             for (var b = 0; b < 8; b++) data[header + b] = 0;
-            for (var b = 0; b < newName.Length; b++) data[header + b] = (byte)newName[b];
+            for (var b = 0; b < to.Length; b++) data[header + b] = (byte)to[b];
             result.Renamed++;
         }
 

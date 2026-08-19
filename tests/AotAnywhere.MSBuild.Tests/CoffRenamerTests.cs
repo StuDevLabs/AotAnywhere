@@ -3,16 +3,15 @@ using AotAnywhere.Tasks;
 
 namespace AotAnywhere.MSBuild.Tests;
 
-// Ports the link_shim.zig /MERGE COFF-surgery tests to the managed
-// CoffSectionRenamer - the binary object rewriting that /MERGE requires and
-// that no MSBuild XML can do (hence a compiled task).
+// Covers CoffSectionRenamer - the binary object rewriting that /MERGE requires
+// and that no MSBuild XML can do (hence a compiled task).
 public class CoffRenamerTests
 {
     const int StrtabOffset = 20 + 3 * 40; // 140: symbol table (empty) sits at the string table
 
     // Minimal COFF object: header, three section headers (.text inline,
     // .managedcode$I via the string table, hydrated inline and uninitialized),
-    // no symbols, and a string table. Port of buildTestCoff.
+    // no symbols, and a string table.
     static byte[] BuildTestCoff(bool hydratedInitialized)
     {
         var strtab = new byte[] { 0, 0, 0, 0 }
@@ -48,20 +47,30 @@ public class CoffRenamerTests
     static string? NameAt(byte[] coff, int header) => CoffSectionRenamer.SectionName(coff, header, StrtabOffset);
 
     [Test]
-    public async Task RenamesGroupedAndExactLengthSectionsInPlace()
+    public async Task RenamesExactLengthSectionsInPlace()
     {
         var coff = BuildTestCoff(hydratedInitialized: false);
-
-        await Assert.That(CoffSectionRenamer.RenameSections(coff, ".managedcode", ".text").Renamed).IsEqualTo(1);
-        await Assert.That(NameAt(coff, 60)).IsEqualTo(".text$I");
 
         await Assert.That(CoffSectionRenamer.RenameSections(coff, "hydrated", ".bss").Renamed).IsEqualTo(1);
         await Assert.That(NameAt(coff, 100)).IsEqualTo(".bss");
 
         // Untouched section keeps its name; a second pass finds nothing.
         await Assert.That(NameAt(coff, 20)).IsEqualTo(".text");
-        await Assert.That(CoffSectionRenamer.RenameSections(coff, ".managedcode", ".text").Renamed).IsEqualTo(0);
         await Assert.That(CoffSectionRenamer.RenameSections(coff, "hydrated", ".bss").Renamed).IsEqualTo(0);
+    }
+
+    // The managed-code range brackets depend on it: lld only keeps
+    // .managedcode$A/$I/$Z in order while they own their output section, so
+    // /MERGE:.managedcode=.text must be a no-op here (see CoffSectionRenamer).
+    [Test]
+    public async Task LeavesGroupedSectionsUnmerged()
+    {
+        var coff = BuildTestCoff(hydratedInitialized: false);
+
+        var r = CoffSectionRenamer.RenameSections(coff, ".managedcode", ".text");
+        await Assert.That(r.Renamed).IsEqualTo(0);
+        await Assert.That(r.SkippedGrouped).IsEqualTo(1);
+        await Assert.That(NameAt(coff, 60)).IsEqualTo(".managedcode$I");
     }
 
     [Test]
@@ -78,9 +87,10 @@ public class CoffRenamerTests
     public async Task RefusesNamesThatDoNotFitInline()
     {
         var coff = BuildTestCoff(hydratedInitialized: false);
-        var r = CoffSectionRenamer.RenameSections(coff, ".managedcode", ".mycode"); // ".mycode$I" is 9 bytes
+        var r = CoffSectionRenamer.RenameSections(coff, "hydrated", ".hydrated"); // 9 bytes
         await Assert.That(r.Renamed).IsEqualTo(0);
         await Assert.That(r.SkippedLong).IsEqualTo(1);
+        await Assert.That(NameAt(coff, 100)).IsEqualTo("hydrated");
     }
 
     [Test]
