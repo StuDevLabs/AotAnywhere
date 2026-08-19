@@ -60,13 +60,16 @@ public static class MachoEhTablePatcher
                 // segment_command_64: cmd cmdsize segname[16] vmaddr vmsize
                 // fileoff filesize maxprot initprot nsects flags; section
                 // headers (80 bytes each) follow at +72.
+                if (cmdsize < 72)
+                    throw new MachoFormatException("truncated segment command");
+
                 var nsects = Rd32(data, (int)offset + 8 + 56);
+                if (72 + (long)nsects * 80 > cmdsize)
+                    throw new MachoFormatException("section headers past segment command");
+
                 for (uint s = 0; s < nsects; s++)
                 {
-                    var so = (int)offset + 72 + (int)s * 80;
-                    if (so + 80 > offset + cmdsize)
-                        throw new MachoFormatException("section header past segment command");
-
+                    var so = (int)(offset + 72 + (long)s * 80);
                     if (!SectionNameEquals(data, so, sectionName))
                         continue;
 

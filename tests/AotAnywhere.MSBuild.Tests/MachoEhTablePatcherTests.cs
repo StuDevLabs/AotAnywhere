@@ -108,4 +108,29 @@ public class MachoEhTablePatcherTests
         await Assert.That(() => MachoEhTablePatcher.ClearDebugAttr(new byte[64], ".dotnet_eh_table"))
             .Throws<MachoFormatException>();
     }
+
+    [Test]
+    public async Task RejectsSegmentCommandTruncatedBeforeNsects()
+    {
+        // LC_SEGMENT_64 whose cmdsize stops short of the 72-byte fixed header,
+        // so nsects at +64 lies past the end of the buffer
+        var data = new byte[32 + 16];
+        Wr32(data, 0, 0xFEEDFACF);
+        Wr32(data, 12, 0x1);
+        Wr32(data, 16, 1);
+        Wr32(data, 20, 16);
+        Wr32(data, 32, 0x19);
+        Wr32(data, 36, 16); // cmdsize < 72
+        await Assert.That(() => MachoEhTablePatcher.ClearDebugAttr(data, ".dotnet_eh_table"))
+            .Throws<MachoFormatException>();
+    }
+
+    [Test]
+    public async Task RejectsNsectsOverrunningSegmentCommand()
+    {
+        var data = BuildObject((".dotnet_eh_table", SAttrDebug));
+        Wr32(data, 32 + 8 + 56, 4); // nsects claims 4 headers, cmdsize holds 1
+        await Assert.That(() => MachoEhTablePatcher.ClearDebugAttr(data, ".dotnet_eh_table"))
+            .Throws<MachoFormatException>();
+    }
 }
