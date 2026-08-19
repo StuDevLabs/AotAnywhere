@@ -52,6 +52,7 @@
   </PropertyGroup>
   <UsingTask TaskName="AotAnywhere.Tasks.AotAnywhereWindowsLink" AssemblyFile="$(AotAnywhereTasksAssembly)" />
   <UsingTask TaskName="AotAnywhere.Tasks.AotAnywhereStrip" AssemblyFile="$(AotAnywhereTasksAssembly)" />
+  <UsingTask TaskName="AotAnywhere.Tasks.AotAnywherePatchAppleObject" AssemblyFile="$(AotAnywhereTasksAssembly)" />
 
   <PropertyGroup>
     <_AotAnywhereDirectLinkActive>false</_AotAnywhereDirectLinkActive>
@@ -211,6 +212,22 @@
       <_MacLinksSwift Condition="$(_MacAllLinkerArgs.Contains('-lswiftCore'))">true</_MacLinksSwift>
 
       <_MacPadFile>$(MSBuildThisFileDirectory)aotanywhere-gs-pad.c</_MacPadFile>
+      <!-- Managed-code range bookends. zig's Mach-O linker folds ILC's
+           __TEXT,__managedcode into __text, collapsing the linker-synthesized
+           section$start/end brackets the NativeAOT bootstrapper registers as
+           the managed-code range - an empty range fail-fasts the first GC's
+           stack root-scan (silent SIGABRT). Bracketing the ILC object with
+           these bookends defines the four bracket symbols at the right spots
+           (our definitions win over the synthesis). Position on the link line
+           is load-bearing: start immediately before the object, end
+           immediately after - and zig cc reorders inline source files after
+           object-file args, so the bookends must be pre-assembled .o files
+           (done by the link target); the .s sources ship next to these
+           targets. See the .s files for the full story. -->
+      <_MacManagedStartSource>$(MSBuildThisFileDirectory)aotanywhere-managedcode-start.s</_MacManagedStartSource>
+      <_MacManagedEndSource>$(MSBuildThisFileDirectory)aotanywhere-managedcode-end.s</_MacManagedEndSource>
+      <_MacManagedStartObj>$([System.IO.Path]::GetDirectoryName($(NativeObject)))/aotanywhere-managedcode-start.o</_MacManagedStartObj>
+      <_MacManagedEndObj>$([System.IO.Path]::GetDirectoryName($(NativeObject)))/aotanywhere-managedcode-end.o</_MacManagedEndObj>
     </PropertyGroup>
 
     <!-- The Apple framing LinkNative wraps around @(LinkerArg): the object,
@@ -230,7 +247,9 @@
          whatever the SDK actually emitted. Keeping the framing minimal and
          letting @(LinkerArg) carry the bulk contains that coupling. -->
     <ItemGroup>
+      <_MacCore Include="&quot;$(_MacManagedStartObj)&quot;" />
       <_MacCore Include="&quot;$(NativeObject)&quot;" />
+      <_MacCore Include="&quot;$(_MacManagedEndObj)&quot;" />
       <_MacCore Include="-o &quot;$(NativeBinary)&quot;" />
       <_MacCore Include="-exported_symbols_list &quot;$(ExportsFile)&quot;" Condition="'$(ExportsFile)' != ''" />
       <_MacCore Include="-exported_symbols_list /dev/null" Condition="'$(OutputType)' == 'exe' and '$(ExportsFile)' == ''" />
@@ -312,6 +331,26 @@
              Text="AotAnywhere: could not resolve the macOS SDK via xcrun; linking without -isysroot." />
 
     <Message Importance="high" Text="AotAnywhere: linking $(NativeBinary) with zig directly (macOS $([MSBuild]::ValueOrDefault('$(_AotAnywhereMacHostLink)', 'false').Replace('true','native').Replace('false','cross')))" />
+
+    <!-- Clear S_ATTR_DEBUG on .dotnet_eh_table in the ILC object: zig's
+         linker drops debug-attributed sections, and losing the managed
+         GC-info table makes the first garbage collection read garbage and
+         crash. In-place and idempotent (rewrites only when the bit is set),
+         so incremental timestamps stay stable. -->
+    <AotAnywherePatchAppleObject ObjectFile="$(NativeObject)" />
+
+    <!-- Pre-assemble the managed-code bookends (directive-only .s, so this is
+         instant). They cannot ride the link line as sources: zig cc appends
+         compiled sources after object-file args, which would land both
+         bookends past the ILC object and collapse the bracket. -->
+    <PropertyGroup>
+      <!-- OverwriteTargetTriple always sets $(TargetTriple) for these links;
+           the empty-guard keeps the assemble host-targeted rather than broken
+           if that ever changes. -->
+      <_MacManagedTargetArg Condition="'$(TargetTriple)' != ''">--target=$(TargetTriple)</_MacManagedTargetArg>
+    </PropertyGroup>
+    <Exec Command="&quot;$(_AotAnywhereZigExe)&quot; cc $(_MacManagedTargetArg) -c &quot;$(_MacManagedStartSource)&quot; -o &quot;$(_MacManagedStartObj)&quot;" />
+    <Exec Command="&quot;$(_AotAnywhereZigExe)&quot; cc $(_MacManagedTargetArg) -c &quot;$(_MacManagedEndSource)&quot; -o &quot;$(_MacManagedEndObj)&quot;" />
 
     <Exec Command="&quot;$(_AotAnywhereZigExe)&quot; cc @(_MacLinkArg, ' ')"
           CustomWarningRegularExpression="$(IlcCppLinkerCustomWarningRegularExpression)" />

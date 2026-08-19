@@ -103,6 +103,25 @@ public class MacLinkArgsTests
         await Assert.That(args[^1].Contains("aotanywhere-gs-pad.c")).IsTrue();
     }
 
+    // The managed-code range bookends: zig's linker folds __TEXT,__managedcode
+    // into __text, emptying the section$start/end brackets the NativeAOT
+    // bootstrapper registers as the managed-code range - and an empty range
+    // fail-fasts the first GC's stack root-scan. The bookend .s files define
+    // the bracket symbols themselves; their position on the link line is
+    // load-bearing (start immediately before the ILC object, end immediately
+    // after), so guard the exact ordering.
+    [Test]
+    public async Task ManagedCodeBookendsBracketTheObject()
+    {
+        var args = Compute("--target=aarch64-macos");
+        var start = Array.FindIndex(args, a => a.Contains("aotanywhere-managedcode-start.o"));
+        var obj = Array.FindIndex(args, a => a.Contains("Hello.o"));
+        var end = Array.FindIndex(args, a => a.Contains("aotanywhere-managedcode-end.o"));
+        await Assert.That(start).IsGreaterThan(-1);
+        await Assert.That(obj).IsEqualTo(start + 1);
+        await Assert.That(end).IsEqualTo(obj + 1);
+    }
+
     [Test]
     public async Task CarriesObjectOutputAndTriple()
     {

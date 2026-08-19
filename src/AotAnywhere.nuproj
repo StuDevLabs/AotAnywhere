@@ -61,6 +61,17 @@
       <Pack>true</Pack>
       <PackagePath>build</PackagePath>
     </None>
+    <!-- Managed-code range bookends compiled into every macOS link around the
+         ILC object (referenced via $(MSBuildThisFileDirectory)); must sit next
+         to the targets in build/. -->
+    <None Include="aotanywhere-managedcode-start.s">
+      <Pack>true</Pack>
+      <PackagePath>build</PackagePath>
+    </None>
+    <None Include="aotanywhere-managedcode-end.s">
+      <Pack>true</Pack>
+      <PackagePath>build</PackagePath>
+    </None>
     <!-- MSVC glue compiled into every Windows link by the AotAnywhereWindowsLink
          task (referenced via $(MSBuildThisFileDirectory)); must sit in build/. -->
     <None Include="aotanywhere-msvc-glue.c">
