@@ -252,10 +252,12 @@ jobs:
           # All Linux targets link via the direct zig invocation (the only
           # Linux link flow; the clang shim hard-errors if a Linux link
           # reaches it). The extra linux-x64 variants, spread across the
-          # groups to keep the four streams balanced at 4/3/2/3:
+          # groups to keep the four streams balanced at 4/3/3/3:
           #   linux-x64-selftest - net10.0, real ICU/zlib/OpenSSL,
           #                        exercised at run time
           #   lib-linux-x64      - NativeLib=Shared library
+          #   lib-osx-arm64      - NativeLib=Shared dylib, which is where
+          #                        the exports list matters (issue #98)
           - name: Build glibc Linux targets
             shell: bash
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "linux-x64,linux-arm64,linux-arm,linux-x64-selftest"
@@ -264,7 +266,7 @@ jobs:
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "linux-musl-x64,linux-musl-arm64,linux-musl-arm"
           - name: Build macOS targets
             shell: bash
-            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "osx-x64,osx-arm64"
+            run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "osx-x64,osx-arm64,lib-osx-arm64"
           - name: Build Windows targets and linux shared library
             shell: bash
             run: bash .github/scripts/build-targets.sh "${{ matrix.host-name }}" "win-x64,win-arm64,lib-linux-x64"
@@ -310,10 +312,11 @@ jobs:
           - runner: macos-15-intel
             runner-name: macos-x64
             test-targets: "osx-x64"
-          # Test macOS binaries on macOS ARM64
+          # Test macOS binaries on macOS ARM64. lib-osx-arm64 covers the
+          # shared library (loaded via ctypes) and its export surface.
           - runner: depot-macos-latest
             runner-name: macos-arm64
-            test-targets: "osx-arm64"
+            test-targets: "osx-arm64,lib-osx-arm64"
           # Test Windows x64 binaries on Windows x64. The windows-host builds
           # are MSVC-linked (package inert there); the others are zig-linked
           # by the shim's link personality, so this is where the MinGW-glued
@@ -410,7 +413,8 @@ jobs:
             for target in "${TARGET_ARRAY[@]}"; do
               binary_name="Hello"
               [[ "$target" == win-* ]] && binary_name="Hello.exe"
-              [[ "$target" == lib-* ]] && binary_name="HelloLib.so"
+              [[ "$target" == lib-linux-* ]] && binary_name="HelloLib.so"
+              [[ "$target" == lib-osx-* ]] && binary_name="HelloLib.dylib"
               binary_path="binaries-$host/$target/$binary_name"
               skip_file="binaries-$host/$target/SKIPPED.txt"
               
@@ -445,7 +449,7 @@ jobs:
               # osx-x64 was signed with the CI test certificate by the build
               # job; osx-arm64 carries zig's ad-hoc linker signature. Both
               # must pass strict verification.
-              if [[ "$target" == osx-* ]]; then
+              if [[ "$target" == osx-* || "$target" == lib-osx-* ]]; then
                 echo -n "  Signature check: "
                 if ! codesign --verify --strict "$binary_path"; then
                   echo "❌ FAIL - invalid code signature"
@@ -475,14 +479,25 @@ jobs:
                 # demotes every ILC external not on the list before the link.
                 # Unapplied, ILC 8 leaves ~14k managed method symbols exported;
                 # applied, only the runtime's static-library externals (a few
-                # hundred) remain.
+                # hundred) remain - so no managed (S_P_CoreLib_*) symbol may be
+                # exported, and for the dylib the listed hello_add entry point
+                # must still be.
                 echo -n "  Exports check: "
-                export_count=$(nm -gU "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
+                nm -gU "$binary_path" 2>/dev/null > /tmp/exports.txt
+                export_count=$(wc -l < /tmp/exports.txt | tr -d ' ')
                 if [ "$export_count" -ge 2000 ]; then
                   echo "❌ FAIL - $export_count exported symbols; the exports list was not applied"
                   continue
                 fi
-                echo "✅ $export_count exported symbols"
+                if grep -q "S_P_CoreLib_" /tmp/exports.txt; then
+                  echo "❌ FAIL - managed symbols are exported: $(grep -c S_P_CoreLib_ /tmp/exports.txt)"
+                  continue
+                fi
+                if [[ "$target" == lib-* ]] && ! grep -q " T _hello_add$" /tmp/exports.txt; then
+                  echo "❌ FAIL - _hello_add is not exported"
+                  continue
+                fi
+                echo "✅ $export_count exported symbols, no managed symbols"
               fi
 
               # Linux binaries were stripped by the shim's llvm-objcopy

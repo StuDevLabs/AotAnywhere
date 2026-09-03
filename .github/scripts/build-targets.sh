@@ -57,7 +57,9 @@ for target in "${TARGET_ARRAY[@]}"; do
   # Pseudo-target decorations select publish variants of the same RID; the
   # artifact directory keeps the decorated name so the validate job can
   # exercise each variant:
-  #   lib-<rid>      - test/HelloLib, a NativeLib=Shared library
+  #   lib-<rid>      - test/HelloLib, a NativeLib=Shared library (Linux
+  #                    and macOS; the dylib proves the exports list is
+  #                    applied on a zig macho link, issue #98)
   #   <rid>-selftest - Hello with AotAnywhereSelfTest=true: net10.0 and real
   #                    ICU (no InvariantGlobalization), zlib and OpenSSL
   #                    exercised at run time via --selftest
@@ -117,9 +119,10 @@ for target in "${TARGET_ARRAY[@]}"; do
     # For macOS targets, use AotAnywhere for cross-compilation.
     # Deliberately no StripSymbols override: it defaults to true and is
     # honoured at link time via ld64's -x/-S (issue #62); the mac runners
-    # assert the local symbols are actually gone.
-    if dotnet publish test/Hello.csproj \
-      -r "$target" \
+    # assert the local symbols are actually gone, and that the exports
+    # list was applied (issue #98).
+    if dotnet publish "$project" \
+      -r "$rid" \
       -c Release \
       -p:InvariantGlobalization=true \
       -p:BaseIntermediateOutputPath="$obj_dir" \
@@ -160,6 +163,7 @@ for target in "${TARGET_ARRAY[@]}"; do
     binary_name="$binary_base"
     [[ "$rid" == win-* ]] && binary_name="$binary_base.exe"
     [[ "$rid" == linux-* && "$binary_base" == "HelloLib" ]] && binary_name="$binary_base.so"
+    [[ "$rid" == osx-* && "$binary_base" == "HelloLib" ]] && binary_name="$binary_base.dylib"
 
     if [ -f "artifacts/$host_name/$target/$binary_name" ]; then
       echo "✅ Binary confirmed: $binary_name for $target"
