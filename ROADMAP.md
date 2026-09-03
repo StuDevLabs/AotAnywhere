@@ -40,17 +40,17 @@ maintenance.
    flags, GS pad and Swift overlay libs are reconstructed as MSBuild items, the
    full command line is in binlogs, and the clang shim is gone. This, plus the
    Windows link task and the managed ELF strip, retired the native shim entirely.
-5b. **Demote ILC's external symbols on macOS for net8/net9 (spike).** Issue #62's
-   dominant cost (local symbols + stabs) is fixed by link-time `-Wl,-x -Wl,-S`,
-   but symbols older ILCs emit as true externals survive: zig's linker ignores
-   `-exported_symbols_list` (and rejects `-(un)exported_symbol`), which is how
-   the standard pipeline demotes them before `strip -x`. net10+ marks them
-   hidden so output is near-parity; net8 keeps ~14k externals (~1 MB of mangled
-   names in `__LINKEDIT` for the Hello app). Spike: pre-link nlist surgery on
-   the ILC object (set `N_PEXT` on non-exported externals — zig then emits them
-   as locals and `-x` drops them; no re-sign needed since the surgery is on the
-   relocatable input, not the signed output). Keep-list: `ExportsFile` entries
-   plus `_main`.
+5b. **Demote ILC's external symbols on macOS for net8/net9. ✅ Done (#98).**
+   Issue #62's dominant cost (local symbols + stabs) is fixed by link-time
+   `-Wl,-x -Wl,-S`, but symbols older ILCs emit as true externals survived:
+   zig's linker ignores `-exported_symbols_list` (and rejects
+   `-(un)exported_symbol`), which is how the standard pipeline demotes them
+   before `strip -x`. `AotAnywherePatchAppleObject` now applies the exports
+   list itself — pre-link nlist surgery on the ILC object setting `N_PEXT` on
+   every external not in `ExportsFile`; zig emits those hidden and `-x` drops
+   them. No re-sign needed since the surgery is on the relocatable input. The
+   runtime's static libraries are not rewritten, so their few hundred externals
+   still show in `nm -gU`.
 
 ## Tier 3 — Architecture / tech debt
 

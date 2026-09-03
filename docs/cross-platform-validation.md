@@ -42,7 +42,10 @@ invocation, the only Linux link flow — every host also publishes decorated
 `linux-x64` variants (see `build-targets.sh`): `lib-linux-x64` (a
 `NativeLib=Shared` library, loaded and called via python ctypes during
 validation) and `linux-x64-selftest` (a net10.0 build exercising real
-ICU, zlib and OpenSSL at run time via `--selftest`).
+ICU, zlib and OpenSSL at run time via `--selftest`), plus `lib-osx-arm64`,
+the same shared library as a dylib, which additionally checks that the
+exports list was applied to the zig macho link (only `hello_add` and the
+runtime's own externals exported, no managed method symbols).
 
 ### 2. Build Process
 For each host-target combination:

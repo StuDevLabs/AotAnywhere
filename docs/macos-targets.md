@@ -27,10 +27,16 @@ Things to know:
   and reject zig-linked binaries anyway. That also means no `.dSYM` sidecar is
   produced; publish with `/p:StripSymbols=false` to keep the symbols in the
   binary instead. (Native AOT stack traces don't need either — they come from
-  ILC's own metadata.) Older ILCs emit many method symbols as externals, which
-  link-time stripping cannot remove, so binaries get closer to the standard
-  pipeline's size the newer the target framework: on .NET 10 they are within a
-  few percent, on .NET 8 noticeably larger.
+  ILC's own metadata.)
+- The SDK's exported-symbols list (`-exported_symbols_list`, which keeps a
+  `NativeLib=Shared` dylib's exports down to its `UnmanagedCallersOnly` entry
+  points and lets the strip drop the method symbols older ILCs emit as
+  externals) is ignored by zig's linker, so AotAnywhere applies it to the ILC
+  object before the link instead: every symbol not on the list is marked
+  private-external, which zig honours. The result matches the standard
+  pipeline for everything ILC emits; the few hundred externals the runtime's
+  static libraries contribute (`GlobalizationNative_*` and friends) stay
+  exported, since those libraries are not rewritten.
 - zig gives osx-arm64 binaries an ad-hoc code signature (Apple Silicon refuses
   to run entirely unsigned code); osx-x64 binaries are left unsigned. Either way
   that only covers running locally — for distribution you should sign (and if
