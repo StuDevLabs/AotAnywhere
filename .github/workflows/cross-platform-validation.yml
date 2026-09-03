@@ -460,8 +460,8 @@ jobs:
                 # The publish must have stripped local symbols and stabs at
                 # link time (ld64 -x/-S, issue #62): unstripped output carries
                 # tens of thousands of ILC locals + stabs, stripped output a
-                # couple hundred zig-synthesized thunks. Externals don't count
-                # - ILC 8 emits ~14k that link-time stripping cannot remove.
+                # couple hundred zig-synthesized thunks. Externals are checked
+                # separately below.
                 echo -n "  Strip check: "
                 local_count=$(nm -a "$binary_path" 2>/dev/null | awk '$2 == "-" || $2 ~ /^[a-z]$/' | wc -l | tr -d ' ')
                 if [ "$local_count" -ge 5000 ]; then
@@ -469,6 +469,20 @@ jobs:
                   continue
                 fi
                 echo "✅ stripped ($local_count local symbols)"
+
+                # The exports list must have been applied (issue #98): zig
+                # ignores -exported_symbols_list, so AotAnywherePatchAppleObject
+                # demotes every ILC external not on the list before the link.
+                # Unapplied, ILC 8 leaves ~14k managed method symbols exported;
+                # applied, only the runtime's static-library externals (a few
+                # hundred) remain.
+                echo -n "  Exports check: "
+                export_count=$(nm -gU "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
+                if [ "$export_count" -ge 2000 ]; then
+                  echo "❌ FAIL - $export_count exported symbols; the exports list was not applied"
+                  continue
+                fi
+                echo "✅ $export_count exported symbols"
               fi
 
               # Linux binaries were stripped by the shim's llvm-objcopy

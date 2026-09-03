@@ -24,6 +24,11 @@ directly by Zig or in managed code:
   MSBuild task (Zig cannot strip ELF), which implements the minimal ELF surgery
   `llvm-objcopy` would do (strip non-alloc sections, `--only-keep-debug` sidecar,
   `.gnu_debuglink`).
+- **macOS object fixups** are done by the `AotAnywherePatchAppleObject` MSBuild
+  task on the ILC object right before the link: it clears the debug attribute
+  zig would otherwise drop the managed GC-info table for, and applies the SDK's
+  exported-symbols list (which zig's linker ignores) by marking every symbol
+  not on it private-external.
 
 The ILC SDK's linker/objcopy probes (`command -v`) that would otherwise require
 clang/llvm-objcopy on `PATH` are simply pointed at the restored Zig, which

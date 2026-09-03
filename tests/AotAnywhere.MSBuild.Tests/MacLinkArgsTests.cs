@@ -10,8 +10,8 @@ namespace AotAnywhere.MSBuild.Tests;
 // -Wl,--gc-sections / --discard-all onto the net8 macho link.
 public class MacLinkArgsTests
 {
-    static string[] Compute(string linkerArgs, string sysroot = "/opt/applesdk",
-        string? stripSymbols = null)
+    static RunResult Run(string linkerArgs, string sysroot = "/opt/applesdk",
+        string? stripSymbols = null, string exportsFile = "", string outputType = "exe")
     {
         var props = new Dictionary<string, string>
         {
@@ -19,8 +19,8 @@ public class MacLinkArgsTests
             ["_MacSysroot"] = sysroot,
             ["NativeObject"] = "/obj/Hello.o",
             ["NativeBinary"] = "/bin/Hello",
-            ["ExportsFile"] = "",
-            ["OutputType"] = "exe",
+            ["ExportsFile"] = exportsFile,
+            ["OutputType"] = outputType,
             ["TestLinkerArgs"] = linkerArgs,
         };
         if (stripSymbols is not null)
@@ -28,8 +28,12 @@ public class MacLinkArgsTests
         var result = Harness.Run("_AotAnywhereComputeMacLinkArgs", props);
         if (!result.Success)
             throw new Exception($"_AotAnywhereComputeMacLinkArgs failed: {result.ErrorText}");
-        return result.Items("_MacLinkArg");
+        return result;
     }
+
+    static string[] Compute(string linkerArgs, string sysroot = "/opt/applesdk",
+        string? stripSymbols = null, string exportsFile = "", string outputType = "exe") =>
+        Run(linkerArgs, sysroot, stripSymbols, exportsFile, outputType).Items("_MacLinkArg");
 
     [Test]
     public async Task NeverEmitsGnuSectionFlags()
@@ -120,6 +124,37 @@ public class MacLinkArgsTests
         await Assert.That(start).IsGreaterThan(-1);
         await Assert.That(obj).IsEqualTo(start + 1);
         await Assert.That(end).IsEqualTo(obj + 1);
+    }
+
+    // zig's Mach-O linker ignores -exported_symbols_list in every spelling
+    // (the bare form the SDK uses draws an "argument unused" warning - issue
+    // #98), so the exports list never rides the link line; it is applied to
+    // the ILC object by AotAnywherePatchAppleObject instead, gated by
+    // _MacApplyExportsList, which mirrors when the SDK would pass a list:
+    // always for an executable (/dev/null without a file), only with a file
+    // for a shared library.
+    [Test]
+    public async Task NeverPassesExportedSymbolsList()
+    {
+        foreach (var args in new[]
+                 {
+                     Compute("--target=aarch64-macos"),
+                     Compute("--target=aarch64-macos", exportsFile: "/obj/Hello.exports"),
+                     Compute("--target=aarch64-macos", exportsFile: "/obj/Hello.exports", outputType: "Library"),
+                 })
+        {
+            await Assert.That(args.Any(a => a.Contains("exported_symbols_list"))).IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task AppliesExportsListLikeTheSdkWould()
+    {
+        await Assert.That(Run("--target=aarch64-macos").Prop("_MacApplyExportsList")).IsEqualTo("true");
+        await Assert.That(Run("--target=aarch64-macos", outputType: "Exe").Prop("_MacApplyExportsList")).IsEqualTo("true");
+        await Assert.That(Run("--target=aarch64-macos", exportsFile: "/obj/Hello.exports").Prop("_MacApplyExportsList")).IsEqualTo("true");
+        await Assert.That(Run("--target=aarch64-macos", exportsFile: "/obj/HelloLib.exports", outputType: "Library").Prop("_MacApplyExportsList")).IsEqualTo("true");
+        await Assert.That(Run("--target=aarch64-macos", outputType: "Library").Prop("_MacApplyExportsList")).IsEqualTo("false");
     }
 
     [Test]

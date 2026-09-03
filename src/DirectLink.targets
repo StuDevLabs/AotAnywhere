@@ -251,10 +251,23 @@
       <_MacCore Include="&quot;$(NativeObject)&quot;" />
       <_MacCore Include="&quot;$(_MacManagedEndObj)&quot;" />
       <_MacCore Include="-o &quot;$(NativeBinary)&quot;" />
-      <_MacCore Include="-exported_symbols_list &quot;$(ExportsFile)&quot;" Condition="'$(ExportsFile)' != ''" />
-      <_MacCore Include="-exported_symbols_list /dev/null" Condition="'$(OutputType)' == 'exe' and '$(ExportsFile)' == ''" />
       <_MacCore Include="@(LinkerArg)" />
     </ItemGroup>
+
+    <!-- The exported-symbols list is the one piece of the SDK's Apple framing
+         that is NOT on the line: zig's Mach-O linker ignores
+         -exported_symbols_list in every spelling (the bare form only draws an
+         "argument unused" warning - issue #98) and rejects -exported_symbol.
+         It is applied to the ILC object instead, before the link
+         (AotAnywherePatchAppleObject demotes every external not on the list to
+         private-external, which zig does honour). This flag mirrors when the
+         SDK would pass a list at all: always for an executable (/dev/null
+         when there is no file - export nothing), only with a file for a
+         shared library. -->
+    <PropertyGroup>
+      <_MacApplyExportsList>false</_MacApplyExportsList>
+      <_MacApplyExportsList Condition="'$(ExportsFile)' != '' or '$(OutputType)' == 'exe'">true</_MacApplyExportsList>
+    </PropertyGroup>
 
     <!-- The shim's fixups, expressed as MSBuild item transforms. -ld_classic
          is unsupported by zig's linker; -L/usr/lib/swift only makes sense on a
@@ -291,13 +304,13 @@
          after they apply. Without them, ILC's local method symbols and
          their stabs stay in __LINKEDIT and the binary is ~2-3x larger than
          the standard pipeline's (issue #62). Symbols ILC emits as true
-         externals survive - zig ignores the -exported_symbols_list that
-         would demote them. Newer ILCs mark ever more of them hidden (which
-         -x then drops): for the Hello test app net8 keeps ~14k externals,
-         net9 ~5.7k, net10 ~600, at which point the output is within ~15%
-         of the standard pipeline's. No dSYM sidecar is possible (dsymutil
-         also rejects zig output); StripSymbols=false keeps the symbols in
-         the binary instead. -->
+         externals (~14k for the net8 Hello app, ~5.7k net9, ~600 net10)
+         would survive -x, since zig ignores the -exported_symbols_list that
+         demotes them in the standard pipeline; the exports list is applied
+         to the ILC object instead (see _MacApplyExportsList), after which
+         -x drops them too. No dSYM sidecar is possible (dsymutil also
+         rejects zig output); StripSymbols=false keeps the symbols in the
+         binary instead. -->
     <ItemGroup Condition="'$(StripSymbols)' == 'true'">
       <_MacStrip Include="-Wl,-x" />
       <_MacStrip Include="-Wl,-S" />
@@ -332,12 +345,17 @@
 
     <Message Importance="high" Text="AotAnywhere: linking $(NativeBinary) with zig directly (macOS $([MSBuild]::ValueOrDefault('$(_AotAnywhereMacHostLink)', 'false').Replace('true','native').Replace('false','cross')))" />
 
-    <!-- Clear S_ATTR_DEBUG on .dotnet_eh_table in the ILC object: zig's
-         linker drops debug-attributed sections, and losing the managed
-         GC-info table makes the first garbage collection read garbage and
-         crash. In-place and idempotent (rewrites only when the bit is set),
-         so incremental timestamps stay stable. -->
-    <AotAnywherePatchAppleObject ObjectFile="$(NativeObject)" />
+    <!-- Prepare the ILC object for zig: clear S_ATTR_DEBUG on
+         .dotnet_eh_table (zig's linker drops debug-attributed sections, and
+         losing the managed GC-info table makes the first garbage collection
+         read garbage and crash), and apply the exports list by demoting the
+         externals not on it to private-external (zig ignores
+         -exported_symbols_list; see _AotAnywhereComputeMacLinkArgs). In-place
+         and idempotent (rewrites only when a bit actually changes), so
+         incremental timestamps stay stable. -->
+    <AotAnywherePatchAppleObject ObjectFile="$(NativeObject)"
+                                 ExportsFile="$(ExportsFile)"
+                                 ApplyExportsList="$(_MacApplyExportsList)" />
 
     <!-- Pre-assemble the managed-code bookends (directive-only .s, so this is
          instant). They cannot ride the link line as sources: zig cc appends
