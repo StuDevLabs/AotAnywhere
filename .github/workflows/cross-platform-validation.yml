@@ -61,7 +61,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
       - name: Run MSBuild logic tests
         run: dotnet run --project tests/AotAnywhere.MSBuild.Tests/AotAnywhere.MSBuild.Tests.csproj -c Release
 
@@ -83,7 +83,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
       - name: Test package consumption from a clean NuGet cache
         run: bash .github/scripts/test-package-consumption.sh linux-x64
 

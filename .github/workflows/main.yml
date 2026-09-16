@@ -44,7 +44,7 @@ jobs:
       - name: Setup dotnet
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
       # Pack restores the Vezel zig toolset and the publish pulls the
       # linux-x64 ILCompiler/runtime packs - both sizeable downloads.
       - name: Cache NuGet packages
