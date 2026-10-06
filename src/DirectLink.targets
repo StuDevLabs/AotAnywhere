@@ -235,11 +235,22 @@
            immediately after - and zig cc reorders inline source files after
            object-file args, so the bookends must be pre-assembled .o files
            (done by the link target); the .s sources ship next to these
-           targets. See the .s files for the full story. -->
+           targets. See the .s files for the full story.
+
+           The object basenames are load-bearing too: zig 0.17's Mach-O
+           linker sorts every link input by basename before laying out atoms
+           (zig commit 6418840f9, a workaround for its non-deterministic input
+           order, ziglang/zig#36946), discarding the command-line order. So
+           the names derive from the ILC object's: "Hello.o" is bracketed by
+           "Hello.aotanywhere-managedcode-start.o" (sorts just before it: 'a'
+           < 'o') and "Hello.o.aotanywhere-managedcode-end.o" (just after: it
+           has "Hello.o" as a prefix). Both orders - command line for zig
+           0.16, basename for 0.17 - then agree. -->
       <_MacManagedStartSource>$(MSBuildThisFileDirectory)aotanywhere-managedcode-start.s</_MacManagedStartSource>
       <_MacManagedEndSource>$(MSBuildThisFileDirectory)aotanywhere-managedcode-end.s</_MacManagedEndSource>
-      <_MacManagedStartObj>$([System.IO.Path]::GetDirectoryName($(NativeObject)))/aotanywhere-managedcode-start.o</_MacManagedStartObj>
-      <_MacManagedEndObj>$([System.IO.Path]::GetDirectoryName($(NativeObject)))/aotanywhere-managedcode-end.o</_MacManagedEndObj>
+      <_MacManagedObjDir>$([System.IO.Path]::GetDirectoryName($(NativeObject)))</_MacManagedObjDir>
+      <_MacManagedStartObj>$(_MacManagedObjDir)/$([System.IO.Path]::GetFileNameWithoutExtension($(NativeObject))).aotanywhere-managedcode-start.o</_MacManagedStartObj>
+      <_MacManagedEndObj>$(_MacManagedObjDir)/$([System.IO.Path]::GetFileName($(NativeObject))).aotanywhere-managedcode-end.o</_MacManagedEndObj>
     </PropertyGroup>
 
     <!-- The Apple framing LinkNative wraps around @(LinkerArg): the object,

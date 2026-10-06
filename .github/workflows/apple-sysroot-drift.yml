@@ -40,12 +40,12 @@ jobs:
 
       # The generator drops symbols that zig's bundled libSystem stub already
       # resolves, so the zig here must be the same upstream release the package
-      # ships (ZigVersion 0.16.0.2 in src/ZigVersion.props == upstream 0.16.0).
+      # ships (ZigVersion 0.17.0.1 in src/ZigVersion.props == upstream 0.17.0).
       # The zig-version-sync CI guard fails the PR if this drifts from that pin.
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       - name: Regenerate Apple sysroot stubs (latest packs)
         run: dotnet run eng/generate-apple-sysroot.cs -- --latest
@@ -134,7 +134,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.16.0
+          version: 0.17.0
 
       # The macOS link runs the managed AotAnywherePatchAppleObject task. The
       # packed SDK ships its DLL; consuming src/*.targets directly needs it

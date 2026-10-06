@@ -18,7 +18,7 @@
        This file is packed into build/ so Crosscompile.targets can import it
        from a restored package as well as from the source tree. -->
   <PropertyGroup>
-    <ZigVersion Condition="'$(ZigVersion)' == ''">0.16.0.2</ZigVersion>
+    <ZigVersion Condition="'$(ZigVersion)' == ''">0.17.0.1</ZigVersion>
   </PropertyGroup>
 
 </Project>
