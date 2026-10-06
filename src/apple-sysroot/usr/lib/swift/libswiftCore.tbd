@@ -18,6 +18,7 @@ exports:
                         '_$sSp8allocate8capacitySpyxGSi_tFZ', '_$sSqMa',
                         '_$sSw5start5countSwSvSg_SitcfC', '_$ss10_hashValue3forSix_tSHRzlF',
                         '_$ss17_assertionFailure__4file4line5flagss5NeverOs12StaticStringV_SSAHSus6UInt32VtF',
+                        '_$ss26_stdlib_isOSVersionAtLeastyBi1_Bw_BwBwtF',
                         '_$ss2eeoiySbx_xtSYRzSQ8RawValueRpzlF', '_$ss5ErrorMp',
                         '_$ss5ErrorP19_getEmbeddedNSErroryXlSgyFTq', '_$ss5ErrorP5_codeSivgTq',
                         '_$ss5ErrorP7_domainSSvgTq', '_$ss5ErrorP9_userInfoyXlSgvgTq',
