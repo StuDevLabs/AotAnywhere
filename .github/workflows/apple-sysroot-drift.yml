@@ -18,6 +18,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # To dispatch PR CI on the drift branch (see below).
+  actions: write
 
 jobs:
   # Regenerate the stubs from the newest packs and open a PR on drift. Must run
@@ -67,6 +69,7 @@ jobs:
           fi
 
       - name: Open pull request with regenerated stubs
+        id: cpr
         if: steps.diff.outputs.drift == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
@@ -84,6 +87,18 @@ jobs:
             Review the diff, then consider bumping the pinned versions in
             `PackVersions` (`eng/generate-apple-sysroot.cs`) to match, so a plain
             `dotnet run eng/generate-apple-sysroot.cs` reproduces this output.
+
+      # A PR opened with GITHUB_TOKEN does not trigger pull_request workflows
+      # (GitHub's recursion guard), so the drift PR would otherwise sit with no
+      # checks. workflow_dispatch is exempt from that guard: dispatch both PR
+      # workflows on the branch, and their checks land on the PR's head commit.
+      - name: Run PR CI on the drift branch
+        if: steps.cpr.outputs.pull-request-operation == 'created' || steps.cpr.outputs.pull-request-operation == 'updated'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run main.yml --ref automation/apple-sysroot-drift
+          gh workflow run cross-platform-validation.yml --ref automation/apple-sysroot-drift
 
   # Canary: cross-compile the sample app for osx-arm64 against the newest preview
   # SDK. A missing Apple symbol surfaces here as a link failure even if the
@@ -120,6 +135,12 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
+
+      # The macOS link runs the managed AotAnywherePatchAppleObject task. The
+      # packed SDK ships its DLL; consuming src/*.targets directly needs it
+      # built so DirectLink.targets' dev fallback resolves it.
+      - name: Build link task
+        run: dotnet build src/tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj -c Release
 
       - name: Publish Hello for osx-arm64
         # Restore explicitly before publishing: publish's implicit restore

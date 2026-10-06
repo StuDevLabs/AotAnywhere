@@ -37,6 +37,31 @@
       "prBodyNotes": [
         ":warning: Zig releases change behaviour relevant to this package. Work through the **[ZigVersion bump checklist](docs/zig-version-bump.md)** before merging — in particular the win-arm64 codegen and `zig objcopy` re-checks that a green CI run cannot prove."
       ]
+    },
+    {
+      "description": "The task DLL compiles against the oldest MSBuild it must load in (17.8, the .NET 8 SDK), and the MSBuild tests match it. These are deliberate floors, not stale versions.",
+      "matchManagers": [
+        "nuget"
+      ],
+      "matchPackageNames": [
+        "Microsoft.Build",
+        "Microsoft.Build.Framework",
+        "Microsoft.Build.Utilities.Core"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "setup-dotnet's 8.0.x is the oldest supported SDK, kept on purpose so CI proves the package still works there. Raise it by hand when .NET 8 support is dropped.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepNames": [
+        "dotnet-sdk"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
     }
   ]
 }
