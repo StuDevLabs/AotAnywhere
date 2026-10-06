@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       full_matrix:
-        description: 'Build from every host platform (adds the macOS x64 and Linux arm64 hosts on top of the default windows/linux/macos-arm64 set)'
+        description: 'Build from every host platform (adds the macOS x64, Linux arm64 and Windows arm64 hosts on top of the default windows/linux/macos-arm64 set)'
         type: boolean
         default: false
   # Available for on-demand full-matrix runs (e.g. a manual pre-release check).
@@ -124,9 +124,9 @@ jobs:
   # driven by the *target* triple, not the host's own OS/arch, so the default
   # set carries one host per host-OS family - windows, linux (x64) and macos
   # (arm64) - which is enough to prove "you can cross-compile from each OS".
-  # The extra same-OS hosts (macOS x64, Linux arm64) only re-prove host-arch
-  # independence, so they run on demand: dispatch/call with full_matrix=true
-  # (e.g. a pre-release sweep). Either way every host still builds all ten
+  # The extra same-OS hosts (macOS x64, Linux arm64, Windows arm64) only
+  # re-prove host-arch independence, so they run on demand: dispatch/call
+  # with full_matrix=true (e.g. a pre-release sweep). Either way every host still builds all ten
   # targets and every target is still validated natively - only the set of
   # build *hosts* narrows.
   setup:
@@ -143,9 +143,9 @@ jobs:
           FULL_MATRIX: ${{ inputs.full_matrix }}
         run: |
           if [ "$FULL_MATRIX" = "true" ]; then
-            echo "Selected full host matrix (all five hosts)."
-            echo 'build-matrix={"include":[{"host":"depot-windows-latest","host-name":"windows"},{"host":"depot-ubuntu-latest","host-name":"linux"},{"host":"macos-15-intel","host-name":"macos-x64"},{"host":"depot-macos-latest","host-name":"macos-arm64"},{"host":"depot-ubuntu-24.04-arm","host-name":"linux-arm64"}]}' >> "$GITHUB_OUTPUT"
-            echo 'host-sources=windows,linux,macos-x64,macos-arm64,linux-arm64' >> "$GITHUB_OUTPUT"
+            echo "Selected full host matrix (all six hosts)."
+            echo 'build-matrix={"include":[{"host":"depot-windows-latest","host-name":"windows"},{"host":"depot-ubuntu-latest","host-name":"linux"},{"host":"macos-15-intel","host-name":"macos-x64"},{"host":"depot-macos-latest","host-name":"macos-arm64"},{"host":"depot-ubuntu-24.04-arm","host-name":"linux-arm64"},{"host":"windows-11-arm","host-name":"windows-arm64"}]}' >> "$GITHUB_OUTPUT"
+            echo 'host-sources=windows,linux,macos-x64,macos-arm64,linux-arm64,windows-arm64' >> "$GITHUB_OUTPUT"
           else
             echo "Selected minimal host matrix (windows, linux, macos-arm64)."
             echo 'build-matrix={"include":[{"host":"depot-windows-latest","host-name":"windows"},{"host":"depot-ubuntu-latest","host-name":"linux"},{"host":"depot-macos-latest","host-name":"macos-arm64"}]}' >> "$GITHUB_OUTPUT"
@@ -661,7 +661,7 @@ jobs:
           echo "" >> platform-report.md
 
           # One "Host" column per host this run built (see the setup job); a
-          # minimal run has three, a full-matrix run five.
+          # minimal run has three, a full-matrix run six.
           host_label() {
             case "$1" in
               windows)     echo "Windows Host" ;;
@@ -669,6 +669,7 @@ jobs:
               macos-x64)   echo "macOS x64 Host" ;;
               macos-arm64) echo "macOS ARM64 Host" ;;
               linux-arm64) echo "Linux ARM64 Host" ;;
+              windows-arm64) echo "Windows ARM64 Host" ;;
               *)           echo "$1 Host" ;;
             esac
           }
