@@ -66,6 +66,11 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
         argv.AddRange(translation.Args);
         argv.Add(GlueSource);
         argv.Add("-L" + stubDir);
+        // No -O, so zig builds Debug with UBSan and compiles its UBSan runtime
+        // into the cache first - unused by the output, but ~37 s of a cold
+        // win-arm64 link. Same flag as the Linux/macOS takeovers
+        // ($(_AotAnywhereZigNoSanitizeArg) in DirectLink.targets).
+        argv.Add("-fno-sanitize=undefined");
 
         // /OPT:REF and /OPT:ICF need a second lld-link pass (see LldLinkReplay);
         // -v makes zig print the lld-link argv the pass replays.

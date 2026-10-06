@@ -52,10 +52,11 @@ public sealed class AotAnywhereStrip : MSBuildTask
                 Log.LogMessage(MessageImportance.Low, $"AotAnywhere strip: '{Binary}' has no section headers; nothing to strip.");
             }
 
-            // 3. --add-gnu-debuglink=<sidecar>: CRC over the sidecar as written.
+            // 3. --add-gnu-debuglink=<sidecar>: CRC over the sidecar as written,
+            //    which is exactly `data` (step 1) - no need to read it back.
             if (keepDebug)
             {
-                var crc = ElfStripper.Crc32(File.ReadAllBytes(SymbolFile));
+                var crc = ElfStripper.Crc32(data);
                 var linked = ElfStripper.AddDebugLink(File.ReadAllBytes(Binary), Path.GetFileName(SymbolFile), crc);
                 WriteInPlace(Binary, linked);
             }

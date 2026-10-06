@@ -54,6 +54,17 @@
   <UsingTask TaskName="AotAnywhere.Tasks.AotAnywhereStrip" AssemblyFile="$(AotAnywhereTasksAssembly)" />
   <UsingTask TaskName="AotAnywhere.Tasks.AotAnywherePatchAppleObject" AssemblyFile="$(AotAnywhereTasksAssembly)" />
 
+  <!-- Our zig cc lines carry no -O flag, so zig treats them as Debug builds
+       and enables UBSan, which makes it compile its UBSan runtime for the
+       target into the zig cache before linking. Nothing in the output uses
+       it (the linker drops it), but that build dominates a cold-cache link:
+       ~37 s of a ~45 s first win-arm64 link, ~4.5 s of ~6 s for linux-x64/
+       arm64. The linked code is identical either way. The Windows task
+       passes the same flag (AotAnywhereWindowsLink). -->
+  <PropertyGroup>
+    <_AotAnywhereZigNoSanitizeArg>-fno-sanitize=undefined</_AotAnywhereZigNoSanitizeArg>
+  </PropertyGroup>
+
   <PropertyGroup>
     <_AotAnywhereDirectLinkActive>false</_AotAnywhereDirectLinkActive>
     <_AotAnywhereDirectLinkActive Condition="$(RuntimeIdentifier.StartsWith('linux')) and '$(NativeLib)' != 'Static'">true</_AotAnywhereDirectLinkActive>
@@ -104,6 +115,7 @@
       <_AotAnywhereLinkArg Include="@(LinkerArg)" Exclude="@(_AotAnywhereDroppedLinkerArg)" />
       <_AotAnywhereLinkArg Include="-Wl,--discard-all" />
       <_AotAnywhereLinkArg Include="-Wl,--gc-sections" />
+      <_AotAnywhereLinkArg Include="$(_AotAnywhereZigNoSanitizeArg)" />
     </ItemGroup>
 
     <MakeDir Directories="$([System.IO.Path]::GetDirectoryName($(NativeBinary)))" />
@@ -323,6 +335,7 @@
       <_MacLinkArg Include="@(_MacCore)" Exclude="@(_MacDrop)" />
       <_MacLinkArg Include="@(_MacSwiftOverlay)" />
       <_MacLinkArg Include="@(_MacStrip)" />
+      <_MacLinkArg Include="$(_AotAnywhereZigNoSanitizeArg)" />
       <_MacLinkArg Include="&quot;$(_MacPadFile)&quot;" />
     </ItemGroup>
 
