@@ -11,6 +11,9 @@ on:
       - '**/*.md'
       - 'LICENSE.TXT'
       - '.github/workflows/deploy-site.yml'
+  # Lets apple-sysroot-drift.yml run this on its bot-opened PR branch, which
+  # pull_request never fires for.
+  workflow_dispatch:
 
 # Releases are driven by publish.yml (dispatch it with a version); this is PR CI
 # only. A new push to the same PR supersedes the running build.
