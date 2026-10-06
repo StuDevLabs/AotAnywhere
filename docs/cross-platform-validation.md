@@ -5,9 +5,15 @@ This repository includes a comprehensive GitHub Actions workflow (`cross-platfor
 ## What It Tests
 
 ### Host Platforms
-- **Windows** (latest)
-- **macOS x64** (macos-13)
-- **macOS ARM64** (macos-latest)
+Every PR builds from one host per OS family:
+- **Windows x64**
+- **Linux x64**
+- **macOS ARM64**
+
+A full-matrix run (`workflow_dispatch` with `full_matrix=true`) adds:
+- **macOS x64** (macos-15-intel)
+- **Linux ARM64**
+- **Windows ARM64** (windows-11-arm)
 
 ### Target Platforms
 - `linux-x64`
@@ -34,7 +40,7 @@ strategy:
         host-name: windows
         targets: "linux-x64,linux-arm64,linux-arm,linux-musl-x64,linux-musl-arm64,linux-musl-arm,osx-x64,osx-arm64,win-x64,win-arm64"
       # ... same target list from ubuntu-latest, ubuntu-24.04-arm,
-      # macos-15-intel and macos-latest hosts
+      # macos-15-intel, macos-latest and windows-11-arm hosts
 ```
 
 Beyond the plain RIDs — which link Linux targets via the direct zig

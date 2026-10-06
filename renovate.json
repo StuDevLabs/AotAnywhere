@@ -6,7 +6,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Bump the single ZigVersion (Vezel.Zig.Toolsets) pin; every other file derives from it",
+      "description": "Bump the single ZigVersion (Vezel.Zig.Toolsets) pin; every other file derives from it. Loose versioning, because nuget versioning reads a bare 0.16.0.2 as the range >= 0.16.0.2, which every newer release already satisfies, so no update was ever proposed.",
       "managerFilePatterns": [
         "/^src/ZigVersion\\.props$/"
       ],
@@ -14,7 +14,8 @@
         "<ZigVersion[^>]*>(?<currentValue>[^<]+)</ZigVersion>"
       ],
       "datasourceTemplate": "nuget",
-      "depNameTemplate": "Vezel.Zig.Toolsets.linux-x64"
+      "depNameTemplate": "Vezel.Zig.Toolsets.linux-x64",
+      "versioningTemplate": "loose"
     }
   ],
   "packageRules": [
@@ -35,7 +36,7 @@
       "groupName": "ZigVersion",
       "commitMessageTopic": "ZigVersion (Zig toolchain)",
       "prBodyNotes": [
-        ":warning: Zig releases change behaviour relevant to this package. Work through the **[ZigVersion bump checklist](docs/zig-version-bump.md)** before merging — in particular the win-arm64 codegen and `zig objcopy` re-checks that a green CI run cannot prove."
+        ":warning: Zig releases change behaviour relevant to this package. Work through the **[ZigVersion bump checklist](docs/zig-version-bump.md)** before merging — in particular the full-matrix dispatch (`full_matrix=true`), since a PR run only builds from three hosts."
       ]
     },
     {

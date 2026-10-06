@@ -34,18 +34,18 @@ automatically — the notes say where.
       *Automated:* the `zig-version-sync` job fails the PR if either drifts from
       `ZigVersion.props`. Run `eng/check-zig-version-sync.sh` locally to check.
 
-- [ ] **`win-arm64` host is still not viable — re-evaluate.** `win-arm64` is a
-      supported *target* (cross-compiled from other hosts), but it is left out of
-      the CI *host* matrix and the README because zig 0.16's aarch64-windows
-      self-hosted code generation is broken. That originally broke building the
-      native shim; the shim is gone now, and links go through `zig cc` (the LLVM
-      backend), so an arm64-Windows *host* may now work. If you have access to
-      one, test publishing from it; if it works, add it as a host.
-
-- [ ] **Full cross-platform validation matrix green.** The `build` and
-      `validate` jobs in `cross-platform-validation.yml` exercise every host ×
-      target combination and run the resulting binaries.
+- [ ] **Default validation matrix green.** On a PR, the `build` and
+      `validate` jobs in `cross-platform-validation.yml` build every target
+      from one host per OS family (Windows x64, Linux x64, macOS arm64) and
+      run the resulting binaries.
       *Automated:* runs on every PR.
+
+- [ ] **Full host matrix green.** The macOS x64, Linux arm64 and Windows
+      arm64 hosts only build in the full matrix, which a PR never runs.
+      Dispatch `cross-platform-validation.yml` on the bump branch with
+      `full_matrix=true`. Windows arm64 is the one to watch: zig 0.16's
+      aarch64-windows support was broken enough that it was dropped as a host
+      until zig 0.17.
 
 - [ ] **The Windows /OPT re-link still works.** The Windows link's second pass
       (`AotAnywhereWindowsLink.RelinkWithOptFlags`) leans on three undocumented
@@ -66,8 +66,9 @@ automatically — the notes say where.
   single pin). The PR body carries this checklist.
 - The **CI already covers most of the checklist** on any PR (`zig-version-sync`,
   `msbuild-logic-tests`, `build`, `validate`). The `build`/`validate` matrix runs
-  a real `zig cc` link for every host × target and executes the resulting
-  binaries, so any zig behaviour change that affects a link surfaces there. The
+  a real `zig cc` link for every target from the three default hosts and
+  executes the resulting binaries, so any zig behaviour change that affects a
+  link surfaces there. The
   `zig-version-sync` guard catches the out-of-band pins Renovate does not touch.
-  The one manual item is the `win-arm64` host re-evaluation, which a green run
-  cannot prove because no arm64-Windows host is in the matrix.
+  The one manual item is the full-matrix dispatch, which a PR run does not do
+  on its own.

@@ -506,7 +506,7 @@ dotnet publish -r win-x64`;
             <text class="colhdr muted" x="736" y="40" text-anchor="middle">RUNS ON</text>
             <g>
               <rect class="card" x="36.5" y="60.5" width="215" height="61" rx="0"></rect>
-              <text class="osname ink" x="52" y="86">Windows</text><text class="arch m-mono muted" x="52" y="106">x64 · x86</text>
+              <text class="osname ink" x="52" y="86">Windows</text><text class="arch m-mono muted" x="52" y="106">x64 · x86 · arm64</text>
               <rect class="card" x="36.5" y="146.5" width="215" height="61" rx="0"></rect>
               <text class="osname ink" x="52" y="172">macOS</text><text class="arch m-mono muted" x="52" y="192">arm64 · x64</text>
               <rect class="card" x="36.5" y="232.5" width="215" height="61" rx="0"></rect>
@@ -546,7 +546,7 @@ dotnet publish -r win-x64`;
               <text class="osname ink" x="644" y="274">Windows</text><text class="rid m-mono ink2" x="644" y="294">win-x64 · win-arm64</text>
             </g>
             <line class="hair" x1="36" y1="336" x2="844" y2="336"></line>
-            <text class="footer ink2" x="440" y="366" text-anchor="middle"><tspan class="good strong">✓  </tspan><tspan class="strong ink">Every combination CI-tested — </tspan><tspan>5 hosts × 10 target RIDs, every binary built and executed on its target platform</tspan></text>
+            <text class="footer ink2" x="440" y="366" text-anchor="middle"><tspan class="good strong">✓  </tspan><tspan class="strong ink">Every combination CI-tested — </tspan><tspan>6 hosts × 10 target RIDs, every binary built and executed on its target platform</tspan></text>
           </svg>
         </div>
       </section>
@@ -597,12 +597,12 @@ dotnet publish -r win-x64`;
             </div>
             <div class="plat-row">
               <div class="plat-os">Windows</div>
-              <div class="plat-host">x86 · x64</div>
+              <div class="plat-host">x86 · x64 · arm64</div>
               <div class="plat-rids">win-x64 · win-arm64</div>
             </div>
           </div>
         </div>
-        <div class="note">// armv7 (linux-arm, linux-musl-arm) → net9.0+ · macOS output needs signing before distribution · win-arm64 host not yet supported</div>
+        <div class="note">// armv7 (linux-arm, linux-musl-arm) → net9.0+ · macOS output needs signing before distribution</div>
       </section>
 
       <!-- how -->
@@ -634,7 +634,7 @@ dotnet publish -r win-x64`;
             <div class="step-n">04</div>
             <div>
               <h3>Validated end to end</h3>
-              <p>A CI matrix of 5 hosts × 10 target RIDs builds and executes every binary on its target platform on every change.</p>
+              <p>Every change builds all 10 target RIDs from Windows, Linux and macOS hosts and executes each binary on its target platform; the full matrix of 6 hosts × 10 target RIDs runs on demand.</p>
             </div>
           </div>
         </div>

@@ -19,7 +19,7 @@ SDKs, cross toolchains or system packages to install on the build machine.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/platform-matrix-dark.svg">
-    <img alt="Diagram: builds on Windows (x64, x86), macOS (arm64, x64) and Linux (x64, arm64) hosts, through AotAnywhere (dotnet publish -r <rid>), and runs on Linux glibc and musl (x64, arm64, arm), macOS (osx-arm64, osx-x64) and Windows (win-x64, win-arm64). Every combination is CI-tested: 5 hosts × 10 target RIDs." src="docs/assets/platform-matrix-light.svg" width="880">
+    <img alt="Diagram: builds on Windows (x64, x86, arm64), macOS (arm64, x64) and Linux (x64, arm64) hosts, through AotAnywhere (dotnet publish -r <rid>), and runs on Linux glibc and musl (x64, arm64, arm), macOS (osx-arm64, osx-x64) and Windows (win-x64, win-arm64). Every combination is CI-tested: 6 hosts × 10 target RIDs." src="docs/assets/platform-matrix-light.svg" width="880">
   </picture>
 </p>
 
@@ -62,7 +62,7 @@ handles that itself, no LLVM install needed).
 
 **Host machines** (where you run `dotnet publish`):
 
-- **Windows** (x86, x64)
+- **Windows** (x86, x64, arm64)
 - **macOS** (x64, arm64)
 - **Linux** (x64, arm64)
 
@@ -89,11 +89,6 @@ handles that itself, no LLVM install needed).
 - **Windows output skips some MSVC hardening.** Control Flow Guard and CET
   markers (`/CETCOMPAT`) are not carried over. For maximum-hardening release
   builds, link on Windows with MSVC. Details in [Windows targets](docs/windows-targets.md).
-
-- **Windows on ARM64 is not supported as a host.** zig 0.16's aarch64-windows
-  code generation is broken, so Zig can't reliably run there. It will be
-  revisited when a newer Zig fixes it. (win-arm64 as a *target* is fully
-  supported.)
 
 - **Linux ICU dependency.** A cross-compiled binary may need the ICU library on
   the target machine, the same as any globalization-enabled .NET app. See

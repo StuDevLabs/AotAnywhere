@@ -133,6 +133,23 @@ public class MacLinkArgsTests
         await Assert.That(end).IsEqualTo(obj + 1);
     }
 
+    // zig 0.17's Mach-O linker lays inputs out sorted by basename (ordinal),
+    // ignoring the command line, so the bookend names must sort tightly
+    // around the ILC object's too.
+    [Test]
+    public async Task ManagedCodeBookendBasenamesSortAroundTheObject()
+    {
+        var args = Compute("--target=aarch64-macos");
+        string Basename(string marker) =>
+            Path.GetFileName(args.Single(a => a.Contains(marker)).Trim('"'));
+        var start = Basename("aotanywhere-managedcode-start.o");
+        var end = Basename("aotanywhere-managedcode-end.o");
+        await Assert.That(start).IsEqualTo("Hello.aotanywhere-managedcode-start.o");
+        await Assert.That(end).IsEqualTo("Hello.o.aotanywhere-managedcode-end.o");
+        await Assert.That(string.CompareOrdinal(start, "Hello.o")).IsLessThan(0);
+        await Assert.That(string.CompareOrdinal("Hello.o", end)).IsLessThan(0);
+    }
+
     // zig's Mach-O linker ignores -exported_symbols_list in every spelling
     // (the bare form the SDK uses draws an "argument unused" warning - issue
     // #98), so the exports list never rides the link line; it is applied to
