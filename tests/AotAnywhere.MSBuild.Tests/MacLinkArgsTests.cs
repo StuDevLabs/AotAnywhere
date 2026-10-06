@@ -101,6 +101,13 @@ public class MacLinkArgsTests
     }
 
     [Test]
+    public async Task UbsanIsDisabledSoZigSkipsBuildingItsRuntime()
+    {
+        var args = Compute("--target=aarch64-macos");
+        await Assert.That(args.Any(a => a == "-fno-sanitize=undefined")).IsTrue();
+    }
+
+    [Test]
     public async Task GsPadSourceIsLinkedLast()
     {
         var args = Compute("--target=aarch64-macos");

@@ -89,16 +89,29 @@ public static class ElfStripper
     }
 
     /// The gnu_debuglink CRC (standard reflected CRC-32, poly 0xEDB88320).
+    /// Table-driven: the input is the whole unstripped sidecar (~55 MB for an
+    /// ASP.NET app), where the bit-at-a-time loop cost ~0.65 s per publish.
     public static uint Crc32(byte[] data)
     {
         var crc = 0xFFFFFFFFu;
         foreach (var b in data)
+            crc = Crc32Table[(crc ^ b) & 0xFF] ^ (crc >> 8);
+        return crc ^ 0xFFFFFFFFu;
+    }
+
+    static readonly uint[] Crc32Table = BuildCrc32Table();
+
+    static uint[] BuildCrc32Table()
+    {
+        var table = new uint[256];
+        for (var i = 0u; i < 256; i++)
         {
-            crc ^= b;
+            var crc = i;
             for (var k = 0; k < 8; k++)
                 crc = (crc >> 1) ^ (0xEDB88320u & (uint)(-(int)(crc & 1)));
+            table[i] = crc;
         }
-        return crc ^ 0xFFFFFFFFu;
+        return table;
     }
 
     readonly struct DebugLink
