@@ -75,11 +75,10 @@ maintenance.
 
 ## Tier 4 — Reach / new capabilities
 
-8. **Re-enable win-arm64 as a host (blocked, tracked).** Blocked on zig 0.16's
-   broken aarch64-windows self-hosted codegen. Now that links go through
-   `zig cc` (the LLVM backend) rather than a `zig build-exe`-compiled shim, an
-   arm64-Windows *host* may already work — standing item: on each `ZigVersion`
-   bump (or given an arm64-Windows machine), test publishing from it.
+8. **Re-enable win-arm64 as a host. ✅ Done (zig 0.17).** zig 0.16's
+   aarch64-windows codegen kept it out; on zig 0.17 the hosted `windows-11-arm`
+   runner builds all ten targets and every binary validates, so it is back in
+   the full host matrix.
 9. **New target RIDs (spike).** Zig can target things .NET partially supports —
    `linux-bionic` (Android), FreeBSD. Spike whether any are reachable with the
    existing sysroot machinery.

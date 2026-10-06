@@ -38,7 +38,7 @@
   <g>
     <rect class="card" x="36.5" y="60.5" width="215" height="61" rx="10"/>
     <text class="osname ink" x="52" y="86">Windows</text>
-    <text class="arch mono muted" x="52" y="106">x64 · x86</text>
+    <text class="arch mono muted" x="52" y="106">x64 · x86 · arm64</text>
 
     <rect class="card" x="36.5" y="146.5" width="215" height="61" rx="10"/>
     <text class="osname ink" x="52" y="172">macOS</text>
@@ -105,5 +105,5 @@
 
   <!-- footer -->
   <line class="hair" x1="36" y1="336" x2="844" y2="336"/>
-  <text class="footer ink2" x="440" y="366" text-anchor="middle"><tspan class="good strong">✓&#160;&#160;</tspan><tspan class="strong ink">Every combination CI-tested&#160;—&#160;</tspan><tspan>5 hosts × 10 target RIDs, every binary built and executed on its target platform</tspan></text>
+  <text class="footer ink2" x="440" y="366" text-anchor="middle"><tspan class="good strong">✓&#160;&#160;</tspan><tspan class="strong ink">Every combination CI-tested&#160;—&#160;</tspan><tspan>6 hosts × 10 target RIDs, every binary built and executed on its target platform</tspan></text>
 </svg>

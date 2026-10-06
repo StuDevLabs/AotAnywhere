@@ -742,7 +742,7 @@ jobs:
           echo "" >> platform-report.md
           echo "## Additional Notes" >> platform-report.md
           echo "- This matrix shows cross-compilation capabilities from different host platforms" >> platform-report.md
-          echo "- Builds run from the selected host platforms ($ACTIVE_HOSTS); a full-matrix dispatch adds the macOS x64 and Linux arm64 hosts" >> platform-report.md
+          echo "- Builds run from the selected host platforms ($ACTIVE_HOSTS); a full-matrix dispatch adds the macOS x64, Linux arm64 and Windows arm64 hosts" >> platform-report.md
           echo "- Runtime validation covers Linux, macOS and Windows (x64 and ARM64) targets on matching hosted runners; ARMv7 targets run under QEMU in arm/v7 containers" >> platform-report.md
           echo "- All builds use .NET 8.0 with Native AOT and Zig for cross-compilation, except the ARMv7 targets which use .NET 9.0 (their ILCompiler packs only ship for .NET 9+)" >> platform-report.md
           echo "" >> platform-report.md
