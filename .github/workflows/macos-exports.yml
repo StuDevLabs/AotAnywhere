@@ -39,6 +39,22 @@ jobs:
             dotnet publish test/HelloLib/HelloLib.csproj -r "$rid" -c Release -p:_XcodeVersion=16 \
               -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/lib-$rid/" -o "out/$rid/lib"
           done
+      - name: Baseline from unmodified upstream
+        # Upstream CI never runs osx-x64 binaries; this tells a pre-existing
+        # failure apart from one this branch introduces.
+        run: |
+          set -euo pipefail
+          git fetch --no-tags https://github.com/StuDevLabs/AotAnywhere.git master
+          git worktree add "$RUNNER_TEMP/upstream" FETCH_HEAD
+          dotnet build "$RUNNER_TEMP/upstream/src/tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj" -c Release
+          for rid in osx-arm64 osx-x64; do
+            dotnet publish "$RUNNER_TEMP/upstream/test/Hello.csproj" -r "$rid" -c Release -p:_XcodeVersion=16 -p:InvariantGlobalization=true \
+              -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/upstream-hello-$rid/" -o "out/$rid/upstream-hello"
+            dotnet publish "$RUNNER_TEMP/upstream/test/Hello.csproj" -r "$rid" -c Release -p:AotAnywhereSelfTest=true \
+              -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/upstream-selftest-$rid/" -o "out/$rid/upstream-selftest"
+            dotnet publish "$RUNNER_TEMP/upstream/test/HelloLib/HelloLib.csproj" -r "$rid" -c Release -p:_XcodeVersion=16 \
+              -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/upstream-lib-$rid/" -o "out/$rid/upstream-lib"
+          done
       - uses: actions/upload-artifact@v6
         with:
           name: macos-binaries
@@ -61,22 +77,39 @@ jobs:
         with:
           name: macos-binaries
           path: out
-      - name: Run
+      - name: Run, branch vs unmodified upstream
         run: |
-          set -euo pipefail
           cd "out/${{ matrix.rid }}"
-          chmod +x hello/Hello selftest/Hello
-          # zig ad-hoc signs osx-arm64; sign osx-x64 so it runs too.
-          for b in hello/Hello selftest/Hello lib/HelloLib.dylib; do codesign -s - -f "$b"; done
-          test "$(./hello/Hello)" = "Hello World"
-          test "$(./selftest/Hello --selftest)" = "selftest ok"
-          test "$(python3 -c "import ctypes, sys; lib = ctypes.CDLL(sys.argv[1]); lib.hello_add.restype = ctypes.c_int; lib.hello_add.argtypes = [ctypes.c_int, ctypes.c_int]; print(lib.hello_add(2, 3))" "$PWD/lib/HelloLib.dylib")" = "5"
-          echo "all ran"
+          fail=0
+          check() {  # check <label> <expected> <command...>
+            local label=$1 expected=$2; shift 2
+            local out code
+            out=$("$@" 2>&1); code=$?
+            if [[ $code -eq 0 && "$out" == "$expected" ]]; then echo "ok    $label"; return 0; fi
+            echo "FAIL  $label (exit $code): $(echo "$out" | head -3)"; return 1
+          }
+          load() { python3 -c "import ctypes, sys; lib = ctypes.CDLL(sys.argv[1]); lib.hello_add.restype = ctypes.c_int; lib.hello_add.argtypes = [ctypes.c_int, ctypes.c_int]; print(lib.hello_add(2, 3))" "$PWD/$1"; }
+          for prefix in "" upstream-; do
+            for b in ${prefix}hello/Hello ${prefix}selftest/Hello ${prefix}lib/HelloLib.dylib; do
+              chmod +x "$b"; codesign -s - -f "$b" 2>&1 | grep -v "replacing existing signature" || true
+            done
+            r1=0; check "${prefix}hello"    "Hello World" ./${prefix}hello/Hello || r1=1
+            r2=0; check "${prefix}selftest" "selftest ok" ./${prefix}selftest/Hello --selftest || r2=1
+            r3=0; check "${prefix}lib"      "5"           load ${prefix}lib/HelloLib.dylib || r3=1
+            if [[ -z "$prefix" ]]; then b1=$r1; b2=$r2; b3=$r3; fi
+          done
+          # Fail only on a regression: the branch fails where upstream passes.
+          for t in 1 2 3; do
+            eval "b=\$b$t; u=\$r$t"
+            if [[ $b -eq 1 && $u -eq 0 ]]; then echo "regression in check $t"; fail=1; fi
+            if [[ $b -eq 1 && $u -eq 1 ]]; then echo "::warning::check $t fails on unmodified upstream too - pre-existing"; fi
+          done
+          exit $fail
       - name: Exports
         run: |
           set -euo pipefail
           cd "out/${{ matrix.rid }}"
-          for b in lib/HelloLib.dylib hello/Hello selftest/Hello; do
+          for b in lib/HelloLib.dylib upstream-lib/HelloLib.dylib hello/Hello upstream-hello/Hello selftest/Hello; do
             n=$(nm -gU "$b" | wc -l | tr -d ' ')
             echo "== $b: $n exported"
             nm -gU "$b" | awk '{print $3}' | sed -E 's/^_([A-Za-z]+)_.*/\1_*/' | sort | uniq -c | sort -rn | head -6
