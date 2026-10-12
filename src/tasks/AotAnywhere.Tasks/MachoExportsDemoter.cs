@@ -18,9 +18,9 @@ namespace AotAnywhere.Tasks;
 /// but is emitted hidden, so it never reaches the export trie and ld64's -x
 /// (which the link line already passes for StripSymbols) drops it from the
 /// symbol table. Setting that bit on the ILC object before the link is
-/// therefore equivalent to the exports list for everything ILC emits. (The
-/// runtime's static libraries are not rewritten, so the few hundred externals
-/// they contribute stay exported; ld64 would have demoted those too.)
+/// therefore equivalent to the exports list for everything ILC emits. The
+/// runtime's static libraries get the same treatment through
+/// MachoArchiveDemoter.
 ///
 /// The surgery is on the relocatable input, so no re-signing of the output is
 /// involved, and only a bit is set - re-running is a no-op.

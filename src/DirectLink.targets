@@ -54,6 +54,7 @@
   <UsingTask TaskName="AotAnywhere.Tasks.AotAnywhereStrip" AssemblyFile="$(AotAnywhereTasksAssembly)" />
   <UsingTask TaskName="AotAnywhere.Tasks.AotAnywherePatchAppleObject" AssemblyFile="$(AotAnywhereTasksAssembly)" />
   <UsingTask TaskName="AotAnywhere.Tasks.AotAnywherePatchAppleBinary" AssemblyFile="$(AotAnywhereTasksAssembly)" />
+  <UsingTask TaskName="AotAnywhere.Tasks.AotAnywhereDemoteAppleArchives" AssemblyFile="$(AotAnywhereTasksAssembly)" />
 
   <!-- Our zig cc lines carry no -O flag, so zig treats them as Debug builds
        and enables UBSan, which makes it compile its UBSan runtime for the
@@ -381,6 +382,22 @@
     <AotAnywherePatchAppleObject ObjectFile="$(NativeObject)"
                                  ExportsFile="$(ExportsFile)"
                                  ApplyExportsList="$(_MacApplyExportsList)" />
+
+    <!-- ld64 applies the exports list to every input, so the standard
+         pipeline also hides the externals the runtime's static libraries
+         define. Do the same on copies of those archives (the originals live
+         in the NuGet cache) and link the copies instead. -->
+    <AotAnywhereDemoteAppleArchives Condition="'$(_MacApplyExportsList)' == 'true'"
+                                    LinkArgs="@(_MacLinkArg)"
+                                    Archives="@(NativeLibrary)"
+                                    ExportsFile="$(ExportsFile)"
+                                    OutputDir="$(_MacManagedObjDir)/aotanywhere-demoted-libs">
+      <Output TaskParameter="RewrittenLinkArgs" ItemName="_MacDemotedLinkArg" />
+    </AotAnywhereDemoteAppleArchives>
+    <ItemGroup Condition="'$(_MacApplyExportsList)' == 'true'">
+      <_MacLinkArg Remove="@(_MacLinkArg)" />
+      <_MacLinkArg Include="@(_MacDemotedLinkArg)" />
+    </ItemGroup>
 
     <!-- Pre-assemble the managed-code bookends (directive-only .s, so this is
          instant). They cannot ride the link line as sources: zig cc appends

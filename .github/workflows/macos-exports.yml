@@ -1,0 +1,88 @@
+name: macOS Exports
+
+# Cross-links macOS targets from Linux and checks on a real Mac that applying
+# the exports list to the runtime's static libraries (AotAnywhereDemoteAppleArchives)
+# hides their externals without breaking anything: the dylib exports only
+# what ILC listed plus what zig cannot demote, and every binary still runs.
+# GitHub-hosted runners only.
+
+on:
+  push:
+    branches: [ macos-demote-runtime-exports ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build task assembly
+        run: dotnet build src/tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj -c Release
+      - name: Cross-link macOS targets
+        # _XcodeVersion: the net8 ILCompiler (8.0.31+) compares it numerically,
+        # and it is empty on a non-Mac host - a separate pre-existing issue.
+        run: |
+          set -euo pipefail
+          for rid in osx-arm64 osx-x64; do
+            dotnet publish test/Hello.csproj -r "$rid" -c Release -p:_XcodeVersion=16 -p:InvariantGlobalization=true \
+              -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/hello-$rid/" -o "out/$rid/hello"
+            dotnet publish test/Hello.csproj -r "$rid" -c Release -p:AotAnywhereSelfTest=true \
+              -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/selftest-$rid/" -o "out/$rid/selftest"
+            dotnet publish test/HelloLib/HelloLib.csproj -r "$rid" -c Release -p:_XcodeVersion=16 \
+              -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/lib-$rid/" -o "out/$rid/lib"
+          done
+      - uses: actions/upload-artifact@v6
+        with:
+          name: macos-binaries
+          path: out/
+          if-no-files-found: error
+
+  validate:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-arm64
+            runner: macos-latest
+          - rid: osx-x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: macos-binaries
+          path: out
+      - name: Run
+        run: |
+          set -euo pipefail
+          cd "out/${{ matrix.rid }}"
+          chmod +x hello/Hello selftest/Hello
+          # zig ad-hoc signs osx-arm64; sign osx-x64 so it runs too.
+          for b in hello/Hello selftest/Hello lib/HelloLib.dylib; do codesign -s - -f "$b"; done
+          test "$(./hello/Hello)" = "Hello World"
+          test "$(./selftest/Hello --selftest)" = "selftest ok"
+          test "$(python3 -c "import ctypes, sys; lib = ctypes.CDLL(sys.argv[1]); lib.hello_add.restype = ctypes.c_int; lib.hello_add.argtypes = [ctypes.c_int, ctypes.c_int]; print(lib.hello_add(2, 3))" "$PWD/lib/HelloLib.dylib")" = "5"
+          echo "all ran"
+      - name: Exports
+        run: |
+          set -euo pipefail
+          cd "out/${{ matrix.rid }}"
+          for b in lib/HelloLib.dylib hello/Hello selftest/Hello; do
+            n=$(nm -gU "$b" | wc -l | tr -d ' ')
+            echo "== $b: $n exported"
+            nm -gU "$b" | awk '{print $3}' | sed -E 's/^_([A-Za-z]+)_.*/\1_*/' | sort | uniq -c | sort -rn | head -6
+          done
+          nm -gU lib/HelloLib.dylib | grep -q ' _hello_add$' || { echo "hello_add not exported"; exit 1; }
+          nm -gU lib/HelloLib.dylib | grep -q ' _DotNetRuntimeDebugHeader$' || { echo "DotNetRuntimeDebugHeader not exported"; exit 1; }
+          if nm -gU lib/HelloLib.dylib | grep -E ' _(SystemNative|GlobalizationNative)_'; then
+            echo "runtime library externals are still exported"; exit 1
+          fi
