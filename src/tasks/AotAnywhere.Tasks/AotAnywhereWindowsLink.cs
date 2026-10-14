@@ -31,16 +31,17 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
     /// Path to the shipped MSVC glue source, compiled into the link.
     [Required] public string GlueSource { get; set; } = "";
 
-    /// Whether to honor /OPT:REF and /OPT:ICF with the second lld-link pass.
-    /// $(AotAnywhereWindowsLinkOptimize) != 'false'; with it off, /OPT is
-    /// dropped and the binary is ~15% larger (matching lld's OPT:NOREF,NOICF
-    /// defaults). The opt-out is an escape hatch for the guards around
-    /// replaying zig's verbose link line (see RelinkWithOptFlags).
+    /// Whether to run the second lld-link pass that honors /OPT:REF,
+    /// /OPT:ICF, /GUARD:CF and /CETCOMPAT. $(AotAnywhereWindowsLinkOptimize)
+    /// != 'false'; with it off those flags are dropped, so the binary is ~15%
+    /// larger (matching lld's OPT:NOREF,NOICF defaults) and has no Control
+    /// Flow Guard or CET marking. The opt-out is an escape hatch for the
+    /// guards around replaying zig's verbose link line (see RelinkWithCoffFlags).
     public bool Optimize { get; set; } = true;
 
     static readonly string[] StubLibNames = { "libLIBCMT.a", "libOLDNAMES.a", "liblibcpmt.a", "libuuid.a" };
     const string StubDirName = "aotanywhere-msvc-stub-libs";
-    const string OptOutHint = "Set AotAnywhereWindowsLinkOptimize=false to link without /OPT:REF,/OPT:ICF (larger binary).";
+    const string OptOutHint = "Set AotAnywhereWindowsLinkOptimize=false to link without /OPT:REF,/OPT:ICF,/GUARD:CF,/CETCOMPAT (larger, less hardened binary).";
 
     /// Environment overrides for the zig processes (the cache pins and
     /// redirects AliasSpacedPaths sets up).
@@ -72,9 +73,16 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
         // ($(_AotAnywhereZigNoSanitizeArg) in DirectLink.targets).
         argv.Add("-fno-sanitize=undefined");
 
-        // /OPT:REF and /OPT:ICF need a second lld-link pass (see LldLinkReplay);
-        // -v makes zig print the lld-link argv the pass replays.
-        var wantOpt = Optimize && (translation.OptRef || translation.OptIcf);
+        // /OPT, /GUARD:CF and /CETCOMPAT need a second lld-link pass (see
+        // LldLinkReplay); -v makes zig print the lld-link argv the pass replays.
+        var relinkFlags = RelinkFlags(translation);
+        if (!Optimize && relinkFlags.Count > 0)
+        {
+            if (translation.GuardCf || translation.GuardEhCont || translation.CetCompat)
+                Log.LogWarning("AotAnywhere: AotAnywhereWindowsLinkOptimize=false skips the second lld-link pass, so /GUARD:CF, /GUARD:EHCONT and /CETCOMPAT are not applied.");
+            relinkFlags.Clear();
+        }
+        var wantOpt = relinkFlags.Count > 0;
         if (wantOpt) argv.Add("-v");
 
         string? scratchDir = null;
@@ -84,7 +92,7 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
 
             var stderrLines = wantOpt ? new List<string>() : null;
             if (!RunZig(argv, stderrLines)) return false;
-            if (wantOpt && !RelinkWithOptFlags(translation, stderrLines!)) return false;
+            if (wantOpt && !RelinkWithCoffFlags(translation, relinkFlags, stderrLines!)) return false;
             return !Log.HasLoggedErrors;
         }
         finally
@@ -188,16 +196,32 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
     [System.Runtime.InteropServices.DllImport("libc", SetLastError = true)]
     static extern int symlink(string target, string linkPath);
 
-    /// The zig cc link above produced a correct but unoptimized binary (zig
-    /// always hands lld-link -DEBUG, so lld defaults to OPT:NOREF,NOICF and
-    /// there is no zig flag to override it). Re-run the exact lld-link
-    /// invocation zig printed - via zig's lld-link subcommand, so it is the
-    /// same linker - with the /OPT flags appended, overwriting the binary and
-    /// PDB in place. No fallback: if the replay cannot be trusted, fail the
-    /// link rather than silently ship the ~15% larger binary.
-    bool RelinkWithOptFlags(MsvcTranslation t, List<string> stderrLines)
+    /// The lld-link flags the second pass appends: the /OPT, /GUARD:CF and
+    /// /CETCOMPAT requests zig cc cannot pass through.
+    public static List<string> RelinkFlags(MsvcTranslation t)
     {
-        var flags = (t.OptRef ? " /OPT:REF" : "") + (t.OptIcf ? " /OPT:ICF" : "");
+        var flags = new List<string>();
+        if (t.OptRef) flags.Add("-OPT:REF");
+        if (t.OptIcf) flags.Add("-OPT:ICF");
+        // Needs the _load_config_used the glue provides; lld fills its
+        // __guard_* tables and sets IMAGE_DLLCHARACTERISTICS_GUARD_CF.
+        if (t.GuardCf) flags.Add("-guard:cf");
+        if (t.GuardEhCont) flags.Add("-guard:ehcont");
+        if (t.CetCompat) flags.Add("-cetcompat");
+        return flags;
+    }
+
+    /// The zig cc link above produced a correct but unoptimized, unhardened
+    /// binary (zig always hands lld-link -DEBUG, so lld defaults to
+    /// OPT:NOREF,NOICF, and there is no zig flag for /OPT, /GUARD:CF or
+    /// /CETCOMPAT). Re-run the exact lld-link invocation zig printed - via
+    /// zig's lld-link subcommand, so it is the same linker - with those flags
+    /// appended, overwriting the binary and PDB in place. No fallback: if the
+    /// replay cannot be trusted, fail the link rather than silently ship a
+    /// larger or unhardened binary.
+    bool RelinkWithCoffFlags(MsvcTranslation t, List<string> relinkFlags, List<string> stderrLines)
+    {
+        var flags = " " + string.Join(" ", relinkFlags.Select(f => "/" + f.Substring(1)));
 
         var line = LldLinkReplay.FindLldLinkLine(stderrLines);
         if (line == null)
@@ -215,10 +239,9 @@ public sealed class AotAnywhereWindowsLink : MSBuildTask
 
         var argv = new List<string> { "lld-link" };
         argv.AddRange(lldArgv);
-        if (t.OptRef) argv.Add("-OPT:REF");
-        if (t.OptIcf) argv.Add("-OPT:ICF");
+        argv.AddRange(relinkFlags);
 
-        Log.LogMessage(MessageImportance.Normal, $"AotAnywhere: re-linking with{flags} (zig cc cannot pass COFF /OPT flags through).");
+        Log.LogMessage(MessageImportance.Normal, $"AotAnywhere: re-linking with{flags} (zig cc cannot pass these COFF flags through).");
         return RunZig(argv, null);
     }
 

@@ -21,6 +21,12 @@ public sealed class MsvcTranslation
     /// pass instead of via Args.
     public bool OptRef { get; set; }
     public bool OptIcf { get; set; }
+    /// /GUARD:CF, /GUARD:EHCONT and /CETCOMPAT. Like /OPT, zig cc has no way
+    /// to pass these COFF flags through, so the task applies them in the same
+    /// second lld-link pass.
+    public bool GuardCf { get; set; }
+    public bool GuardEhCont { get; set; }
+    public bool CetCompat { get; set; }
 }
 
 /// Translates MSVC link.exe arguments to `zig cc` arguments. Pure rewriting;
@@ -34,7 +40,7 @@ public static class MsvcArgTranslator
     {
         "NOLOGO", "MANIFEST", "MANIFESTUAC", "MANIFESTFILE", "INCREMENTAL",
         "NOEXP", "NOIMPLIB", "IGNORE", "NATVIS", "SOURCELINK",
-        "CETCOMPAT", "GUARD", "SAFESEH", "NODEFAULTLIB", "DEFAULTLIB",
+        "SAFESEH", "NODEFAULTLIB", "DEFAULTLIB",
         "MACHINE", "PDB", "PDBALTPATH", "BASE", "DYNAMICBASE",
         "NXCOMPAT", "HIGHENTROPYVA", "FIXED", "TSAWARE", "MAP",
         "VERBOSE", "WX", "TIME", "ERRORREPORT", "LARGEADDRESSAWARE",
@@ -141,6 +147,22 @@ public static class MsvcArgTranslator
                     }
                     continue;
                 }
+                if ((p = OptPayload(opt, "GUARD")) != null)
+                {
+                    // /GUARD:CF, /GUARD:EHCONT[,...] - comma lists, last
+                    // mention wins. NO turns both off; LONGJMP/NOLONGJMP are
+                    // refinements lld-link takes the defaults for.
+                    foreach (var item in p.Split(','))
+                    {
+                        if (EqI(item, "CF")) t.GuardCf = true;
+                        else if (EqI(item, "EHCONT")) t.GuardEhCont = true;
+                        else if (EqI(item, "EHCONT-")) t.GuardEhCont = false;
+                        else if (EqI(item, "NO")) { t.GuardCf = false; t.GuardEhCont = false; }
+                    }
+                    continue;
+                }
+                if (EqI(opt, "CETCOMPAT")) { t.CetCompat = true; continue; }
+                if ((p = OptPayload(opt, "CETCOMPAT")) != null) { t.CetCompat = !EqI(p, "NO"); continue; }
                 if ((p = OptPayload(opt, "MERGE")) != null)
                 {
                     var eq = p.IndexOf('=');

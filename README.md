@@ -86,9 +86,9 @@ handles that itself, no LLVM install needed).
   certificate and notarize it — both doable from any host, no Mac required. See
   [Signing and notarizing](docs/macos-targets.md#signing-and-notarizing).
 
-- **Windows output skips some MSVC hardening.** Control Flow Guard and CET
-  markers (`/CETCOMPAT`) are not carried over. For maximum-hardening release
-  builds, link on Windows with MSVC. Details in [Windows targets](docs/windows-targets.md).
+- **Windows hardening.** Control Flow Guard, EH continuation metadata and
+  `/CETCOMPAT` are carried over from the SDK's link arguments. Details in
+  [Windows targets](docs/windows-targets.md).
 
 - **Linux ICU dependency.** A cross-compiled binary may need the ICU library on
   the target machine, the same as any globalization-enabled .NET app. See
