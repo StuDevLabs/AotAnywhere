@@ -1,0 +1,22 @@
+<Project>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+
+  <PropertyGroup>
+    <!-- Windows hardening coverage for the cross-link: published with
+         ControlFlowGuard=Guard (net10.0, so x64 also gets the SDK's default
+         /CETCOMPAT and /guard:ehcont) and run natively on Windows by
+         windows-hardening.yml to prove the loader actually enables the
+         mitigations, not just that the header bits are set. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <PublishAot>true</PublishAot>
+    <ControlFlowGuard>Guard</ControlFlowGuard>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+
+  <Import Project="../../src/StuDev.AotAnywhere.targets" />
+</Project>

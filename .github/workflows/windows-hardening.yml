@@ -1,0 +1,120 @@
+name: Windows Hardening
+
+# Cross-links Windows targets from Linux and proves on real Windows that the
+# hardening an MSVC link would apply survives the zig/lld-link cross-link:
+# Control Flow Guard (enabled by the loader, and enforced on a bad indirect
+# call), EH continuation metadata, and CETCOMPAT. Also re-runs Hello, since
+# every Windows cross-link now carries a load config directory.
+
+on:
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - '.github/workflows/windows-hardening.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build task assembly
+        run: dotnet build src/tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj -c Release
+      - name: Cross-link Windows targets
+        run: |
+          set -euo pipefail
+          for rid in win-x64 win-arm64; do
+            dotnet publish test/HardeningCheck/HardeningCheck.csproj -r "$rid" -c Release \
+              -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/hc-$rid/" -o "out/$rid/hardening"
+            # Control: same program without CFG, to show the fail-fast below
+            # comes from CFG and not from something else.
+            dotnet publish test/HardeningCheck/HardeningCheck.csproj -r "$rid" -c Release -p:ControlFlowGuard=None \
+              -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/hc-nocfg-$rid/" -o "out/$rid/hardening-nocfg"
+            dotnet publish test/Hello.csproj -r "$rid" -c Release -p:InvariantGlobalization=true \
+              -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/hello-$rid/" -o "out/$rid/hello"
+          done
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-binaries
+          path: out/
+          if-no-files-found: error
+
+  validate:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            runner: windows-latest
+            dumpbin-arch: x64
+          - rid: win-arm64
+            runner: windows-11-arm
+            dumpbin-arch: arm64
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: windows-binaries
+          path: out
+
+      - name: Headers (MSVC dumpbin)
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Host*\${{ matrix.dumpbin-arch }}\dumpbin.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $dumpbin) { $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\*\*\dumpbin.exe" | Select-Object -First 1 }
+          $exe = "out/${{ matrix.rid }}/hardening/HardeningCheck.exe"
+          $out = & $dumpbin.FullName /headers /loadconfig $exe | Out-String
+          $out -split "`n" | Select-String -Pattern 'Guard|CET|DLL characteristics|Security Cookie|Size\s*$' | ForEach-Object { $_.Line.Trim() }
+          if ($out -notmatch 'Control Flow Guard') { throw "dumpbin: Control Flow Guard DLL characteristic missing" }
+          if ($out -notmatch 'CF instrumented') { throw "dumpbin: load config Guard Flags missing 'CF instrumented'" }
+          if ('${{ matrix.rid }}' -eq 'win-x64' -and $out -notmatch 'CET compatible') { throw "dumpbin: CET compatible missing" }
+
+      - name: Loader enables CFG
+        run: |
+          & "out/${{ matrix.rid }}/hardening/HardeningCheck.exe"
+          if ($LASTEXITCODE -ne 0) { throw "CFG not enabled by the loader (exit $LASTEXITCODE)" }
+
+      - name: CFG stops an invalid indirect call
+        run: |
+          & "out/${{ matrix.rid }}/hardening/HardeningCheck.exe" --violate
+          $code = $LASTEXITCODE
+          "exit code: $code (0x{0:X8})" -f $code
+          # STATUS_STACK_BUFFER_OVERRUN: the __fastfail CFG raises.
+          if ($code -ne -1073740791) { throw "expected a CFG fail-fast (0xC0000409), got $code" }
+          exit 0
+
+      - name: Control without CFG
+        run: |
+          & "out/${{ matrix.rid }}/hardening-nocfg/HardeningCheck.exe"
+          if ($LASTEXITCODE -ne 1) { throw "control build: expected CFG disabled (exit 1), got $LASTEXITCODE" }
+          & "out/${{ matrix.rid }}/hardening-nocfg/HardeningCheck.exe" --violate
+          $code = $LASTEXITCODE
+          "control exit code: $code (0x{0:X8})" -f $code
+          # Without CFG the call is legitimate code and returns normally.
+          if ($code -ne 3) { throw "control build: expected the call to succeed (exit 3), got $code" }
+          exit 0
+
+      - name: Hello still runs
+        run: |
+          $o = & "out/${{ matrix.rid }}/hello/Hello.exe"
+          if ($LASTEXITCODE -ne 0 -or $o -ne 'Hello World') { throw "Hello: exit $LASTEXITCODE, output '$o'" }
+          "ok"
+
