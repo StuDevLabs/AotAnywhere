@@ -47,7 +47,7 @@ jobs:
       - name: Setup dotnet
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
       # Pack restores the Vezel zig toolset and the publish pulls the
       # linux-x64 ILCompiler/runtime packs - both sizeable downloads.
       - name: Cache NuGet packages
@@ -73,7 +73,7 @@ jobs:
           # the managed AotAnywhereStrip task (no LLVM on the runner).
           dotnet publish -r linux-x64 -c Release test/Hello.csproj
           # The strip pipeline must have produced the symbol sidecar.
-          test -f test/bin/Release/net8.0/linux-x64/publish/Hello.dbg
+          test -f test/bin/Release/net10.0/linux-x64/publish/Hello.dbg
           # Opt-in UPX compression. Same obj, so the link is up to date and
           # only the copy + pack steps run; publish to a separate folder so
           # both variants reach the validate job. UPX packs the published copy
@@ -84,7 +84,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: Hello
-          path: test/bin/Release/net8.0/linux-x64/publish/Hello
+          path: test/bin/Release/net10.0/linux-x64/publish/Hello
       - name: Upload UPX-compressed test binary
         uses: actions/upload-artifact@v7
         with:

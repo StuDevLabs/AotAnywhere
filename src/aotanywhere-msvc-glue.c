@@ -92,6 +92,14 @@ __attribute__((naked)) void __guard_dispatch_icall_dummy(void)
 {
     __asm__("br x15");
 }
+
+/* mingw's cfguard support object defines __guard_dispatch_icall_fptr for x64
+   only, but the .NET 11+ arm64 runtime (DispatchResolve.asm) dispatches
+   through it. Define it the way mingw does on x64: in the read-only .00cfg
+   section, pointing at the pass-through dummy above. */
+__asm__(".section .00cfg,\"dr\"");
+__attribute__((section(".00cfg")))
+void *__guard_dispatch_icall_fptr = (void *)&__guard_dispatch_icall_dummy;
 #endif
 
 /* The load config directory (normally MSVC's loadcfg.obj; the MinGW CRT has
@@ -105,7 +113,10 @@ __attribute__((naked)) void __guard_dispatch_icall_dummy(void)
    addresses are the values, which C cannot express for the 32-bit
    GuardFlags field. Unlisted fields are zero. Only x64 dispatches indirect
    calls through __guard_dispatch_icall_fptr; arm64 CFG uses the check
-   pointer alone (mingw defines the dispatch pointer for x64 only). */
+   pointer alone. The arm64 dispatch pointer defined above exists only for
+   the .NET 11 runtime's hand-written dispatch stub and is deliberately not
+   listed here, so the loader never rewrites it and it stays the br x15
+   pass-through. */
 #if defined(__x86_64__)
 #define AA_GUARD_DISPATCH_FPTR "  .quad __guard_dispatch_icall_fptr\n"
 #else

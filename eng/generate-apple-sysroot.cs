@@ -58,10 +58,10 @@ static partial class Generator
     // reference fewer symbols).
     static readonly (string Family, string[] Versions)[] PackVersions =
     [
-        // net8/net9: static libs live in runtime.<rid>.microsoft.dotnet.ilcompiler
-        ("ilcompiler", ["8.0.28", "9.0.16"]),
         // net10+: static libs live in microsoft.netcore.app.runtime.nativeaot.<rid>
-        ("nativeaot", ["10.0.9", "11.0.0-preview.5.26302.115"])
+        // (net8/net9 used the "ilcompiler" family, runtime.<rid>.microsoft.dotnet.ilcompiler;
+        // both are out of support and no longer seed the stubs).
+        ("nativeaot", ["10.0.15", "11.0.0"])
     ];
 
     // Stubs to generate, in symbol-attribution priority order (a symbol exported
@@ -167,9 +167,10 @@ static partial class Generator
     // --- "latest" version resolution (drift detection) ---------------------
 
     // Replace each pinned version with the newest version nuget.org offers in
-    // the same major and prerelease lineage. A pinned stable 10.0.9 tracks the
-    // newest stable 10.x; a pinned preview 11.0.0-preview.5.* tracks the newest
-    // 11.x preview. This is what the scheduled drift job runs with (--latest):
+    // the same major and prerelease lineage. A pinned stable 10.0.15 tracks the
+    // newest stable 10.x; a pinned preview (e.g. 12.0.0-preview.1.*) tracks the
+    // newest 12.x preview/RC only - re-pin it to the stable x.0.0 at GA, or the
+    // GA pack and its patches are never checked. This is what the scheduled drift job runs with (--latest):
     // it surfaces new Apple symbols pulled in by fresh patches/previews without
     // needing the pinned list to be hand-bumped first. Whole new majors (e.g. a
     // future net12) are intentionally NOT auto-discovered - that is a deliberate

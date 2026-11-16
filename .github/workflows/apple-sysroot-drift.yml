@@ -6,7 +6,7 @@ name: Apple sysroot drift
 # until the stubs are regenerated. This scheduled job catches that drift before
 # a user hits it: it regenerates the stubs against the *latest* stable + preview
 # packs and opens a PR when they differ, and separately canary-publishes for
-# osx-arm64 against the newest preview SDK so a genuine symbol gap turns the run
+# osx-arm64 against the newest .NET SDK so a genuine symbol gap turns the run
 # red even if the generator missed it.
 
 on:
@@ -100,10 +100,14 @@ jobs:
           gh workflow run main.yml --ref automation/apple-sysroot-drift
           gh workflow run cross-platform-validation.yml --ref automation/apple-sysroot-drift
 
-  # Canary: cross-compile the sample app for osx-arm64 against the newest preview
+  # Canary: cross-compile the sample app for osx-arm64 against the newest .NET
   # SDK. A missing Apple symbol surfaces here as a link failure even if the
-  # generator above did not flag it. Targets the newest preview TFM so the newest
-  # preview ILCompiler pack is exercised; bump both when a new preview major ships.
+  # generator above did not flag it. Targets the newest TFM so the newest
+  # ILCompiler pack is exercised. Between majors this is the newest GA release
+  # (net11.0). When the next major's previews ship, move to it: set
+  # dotnet-version to '12.0.x', add `dotnet-quality: preview`, and bump the
+  # TargetFramework below. At GA, drop dotnet-quality again; otherwise
+  # setup-dotnet keeps installing the last preview/RC, not the GA SDK.
   #
   # Runs on Linux, NOT macOS, on purpose: a macOS host links against the real
   # Apple SDK (-isysroot) and would satisfy a missing symbol from there, hiding
@@ -112,16 +116,15 @@ jobs:
   # scenario, and the only configuration where a stub gap turns the run red.
   canary:
     runs-on: depot-ubuntu-latest
-    name: Canary publish (osx-arm64, newest preview SDK)
+    name: Canary publish (osx-arm64, newest SDK)
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7
 
-      - name: Setup .NET (newest preview)
+      - name: Setup .NET (newest)
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '11.0.x'
-          dotnet-quality: preview
 
       # test/Hello.csproj imports src/*.targets directly instead of consuming
       # the packed SDK, so NuGet cannot restore the host Zig toolset
@@ -145,7 +148,7 @@ jobs:
       - name: Publish Hello for osx-arm64
         # Restore explicitly before publishing: publish's implicit restore
         # ignores the -p:TargetFramework override and restores the csproj's
-        # default TFM (net8.0), so the net11.0 build then fails NETSDK1005
+        # default TFM (net10.0), so the net11.0 build then fails NETSDK1005
         # ("assets file doesn't have a target for net11.0"). An explicit restore
         # honours the override; --no-restore keeps publish from redoing it.
         run: |

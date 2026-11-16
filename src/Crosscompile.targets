@@ -234,6 +234,34 @@
 
   </Target>
 
+  <!-- ILCompiler 11 removed _CopyAotSymbols: native symbols now reach the
+       publish directory as ResolvedFileToPublish items, still named by the
+       host-layout rule above, so the two AfterTargets hooks never fire and
+       both sidecars go missing. Add them as publish items instead. This also
+       runs on older packs, where the managed .pdb item is still present under
+       the same RelativePath and must be dropped first (NETSDK1152); there
+       _CopyAotSymbols then deletes the copied file and the hooks above copy it
+       back, so the end result is the same on every version. -->
+  <Target Name="AotAnywhereAddCrossSymbolsToPublish"
+          AfterTargets="ComputeLinkedFilesToPublish"
+          Condition="'$(CopyOutputSymbolsToPublishDirectory)' != 'false'">
+
+    <PropertyGroup>
+      <_AotAnywhereCrossSymbol Condition="'$(_AotAnywhereWindowsCross)' == 'true'">$(NativeOutputPath)$(TargetName).pdb</_AotAnywhereCrossSymbol>
+      <_AotAnywhereCrossSymbol Condition="$([MSBuild]::IsOSPlatform('Windows')) and !$(RuntimeIdentifier.StartsWith('win')) and '$(NativeBinaryExt)' != ''">$(NativeBinary)$(NativeSymbolExt)</_AotAnywhereCrossSymbol>
+      <_AotAnywhereCrossSymbolName>$([System.IO.Path]::GetFileName('$(_AotAnywhereCrossSymbol)'))</_AotAnywhereCrossSymbolName>
+    </PropertyGroup>
+
+    <ItemGroup Condition="'$(_AotAnywhereCrossSymbol)' != '' and Exists('$(_AotAnywhereCrossSymbol)')">
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.RelativePath)' == '$(_AotAnywhereCrossSymbolName)'" />
+      <ResolvedFileToPublish Include="$(_AotAnywhereCrossSymbol)">
+        <RelativePath>$(_AotAnywhereCrossSymbolName)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+
+  </Target>
+
   <!-- zig leaves an ad-hoc code signature on macOS binaries, which runs
        locally but is not suitable for distribution. This re-signs the linked
        binary with a real identity, from any host:

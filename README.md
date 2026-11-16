@@ -66,19 +66,19 @@ handles that itself, no LLVM install needed).
 - **macOS** (x64, arm64)
 - **Linux** (x64, arm64)
 
+**.NET versions:** `net10.0` and later (.NET 10 LTS, .NET 11). .NET 8 and 9
+reached end of support on 10 November 2026 and are no longer tested;
+AotAnywhere 1.1.0 is the last release validated against them.
+
 **Targets** (what you can publish for), from any supported host:
 
 | Target | RIDs | Notes |
 | --- | --- | --- |
-| **Linux** | `linux-x64`, `linux-arm64`, `linux-arm`, `linux-musl-x64`, `linux-musl-arm64`, `linux-musl-arm` | glibc and musl. The `arm`/ARMv7 RIDs require a `net9.0`+ target framework. |
+| **Linux** | `linux-x64`, `linux-arm64`, `linux-arm`, `linux-musl-x64`, `linux-musl-arm64`, `linux-musl-arm` | glibc and musl. |
 | **macOS** | `osx-x64`, `osx-arm64` | Links against bundled Apple linker stubs. See [macOS targets](docs/macos-targets.md). |
 | **Windows** | `win-x64`, `win-arm64` | From Linux/macOS hosts, via zig's MinGW-w64 import libraries. On a Windows host the SDK links these natively with MSVC. See [Windows targets](docs/windows-targets.md). |
 
 ## Things to be aware of
-
-- **ARMv7 needs .NET 9+.** The `linux-arm` and `linux-musl-arm` targets require a
-  `net9.0` or later target framework — .NET only ships ILCompiler runtime packs
-  for them from .NET 9 onwards.
 
 - **macOS binaries need signing before you distribute them.** Out of the box the
   output only runs locally (osx-arm64 gets an ad-hoc signature, osx-x64 is

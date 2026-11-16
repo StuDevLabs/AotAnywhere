@@ -175,6 +175,18 @@ public class WindowsTranslatorTests
     }
 
     [Test]
+    public async Task SdkOnlyImportLibsMapToTheirMinGwEquivalent()
+    {
+        // ILCompiler 11+ links Synchronization.lib; zig's MinGW has no
+        // libsynchronization, only the API set the SDK's .lib imports from.
+        var t = MsvcArgTranslator.Translate(new[] { "Synchronization.lib", "ws2_32.lib" });
+
+        await Assert.That(Lines(t.Args))
+            .IsEqualTo("-lapi-ms-win-core-synch-l1-2-0\n-lws2_32");
+        await Assert.That(t.Warnings.Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task UnknownOptionsWarnAndDropAbsolutePathsPassThrough()
     {
         var t = MsvcArgTranslator.Translate(new[]

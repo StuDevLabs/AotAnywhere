@@ -47,6 +47,19 @@ public static class MsvcArgTranslator
         "RELEASE", "DEBUGTYPE",
     };
 
+    /// Windows SDK import libraries with no same-named MinGW import library in
+    /// zig's bundle, mapped to the MinGW library that exports the same
+    /// functions. Keys are lower-cased .lib base names.
+    ///
+    /// synchronization: ILCompiler 11+ adds Synchronization.lib (WaitOnAddress,
+    /// WakeByAddressSingle/All) to the Windows link. The SDK's Synchronization.lib
+    /// imports them from the api-ms-win-core-synch-l1-2-0 API set, which zig's
+    /// MinGW ships a .def for; MinGW has no libsynchronization of its own.
+    static readonly Dictionary<string, string> MinGwLibAliases = new()
+    {
+        ["synchronization"] = "api-ms-win-core-synch-l1-2-0",
+    };
+
     /// Splits rsp-style lines into tokens. The SDK's Windows CustomLinkerArg
     /// items are effectively response-file lines - whitespace separates,
     /// double quotes group (also mid-token, as in /NATVIS:"path with spaces"),
@@ -192,6 +205,7 @@ public static class MsvcArgTranslator
             if (EndsWithI(token, ".lib") && token.IndexOfAny(new[] { '/', '\\' }) < 0)
             {
                 var name = token.Substring(0, token.Length - ".lib".Length).ToLowerInvariant();
+                if (MinGwLibAliases.TryGetValue(name, out var alias)) name = alias;
                 t.Args.Add("-l" + name);
                 continue;
             }

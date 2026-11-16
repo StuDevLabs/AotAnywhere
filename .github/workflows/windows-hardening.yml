@@ -30,8 +30,8 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
-            8.0.x
             10.0.x
+            11.0.x
       - name: Build task assembly
         run: dotnet build src/tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj -c Release
       - name: Cross-link Windows targets

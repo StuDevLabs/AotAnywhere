@@ -30,6 +30,9 @@ Things to know:
   range a few bytes wide, which fail-fasts the first GC or exception. Those
   sections are left unmerged, keeping `.managedcode` as its own section (the
   shape .NET 8 emits anyway); the image comes out the same size either way.
+- Windows SDK import libraries with no same-named MinGW counterpart are mapped
+  to the MinGW library exporting the same functions — currently .NET 11's
+  `Synchronization.lib`, linked as `api-ms-win-core-synch-l1-2-0`.
 - The `/GS` stack cookie is randomized at startup, mirroring MSVC's
   `__security_init_cookie`.
 - `/OPT:REF` and `/OPT:ICF` (dead-code stripping and identical-code folding)
