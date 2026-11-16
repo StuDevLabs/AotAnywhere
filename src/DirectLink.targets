@@ -53,6 +53,7 @@
   <UsingTask TaskName="AotAnywhere.Tasks.AotAnywhereWindowsLink" AssemblyFile="$(AotAnywhereTasksAssembly)" />
   <UsingTask TaskName="AotAnywhere.Tasks.AotAnywhereStrip" AssemblyFile="$(AotAnywhereTasksAssembly)" />
   <UsingTask TaskName="AotAnywhere.Tasks.AotAnywherePatchAppleObject" AssemblyFile="$(AotAnywhereTasksAssembly)" />
+  <UsingTask TaskName="AotAnywhere.Tasks.AotAnywherePatchAppleBinary" AssemblyFile="$(AotAnywhereTasksAssembly)" />
 
   <!-- Our zig cc lines carry no -O flag, so zig treats them as Debug builds
        and enables UBSan, which makes it compile its UBSan runtime for the
@@ -396,6 +397,13 @@
 
     <Exec Command="&quot;$(_AotAnywhereZigExe)&quot; cc @(_MacLinkArg, ' ')"
           CustomWarningRegularExpression="$(IlcCppLinkerCustomWarningRegularExpression)" />
+    <!-- zig adds 4 to every pcrel|sdata4 FDE LSDA pointer it writes for
+         x86_64, which ILC's unwind info uses for every managed method: the
+         first managed throw then reads a garbage EH-info offset and dies with
+         SIGBUS. Undo it on the fresh image (once - the fix is not idempotent,
+         which is why it lives here, behind this target's Inputs/Outputs) and
+         before any signing. A no-op for arm64. See MachoEhFrameLsdaFixer. -->
+    <AotAnywherePatchAppleBinary BinaryFile="$(NativeBinary)" />
 
     <!-- remove executable flag, as the SDK's LinkNative does for libraries -->
     <Exec Command="chmod 644 &quot;$(NativeBinary)&quot;" Condition="'$(NativeLib)' == 'Shared'" />
