@@ -8,7 +8,7 @@
          obj/bin also need explicit excludes: CI and local runs relocate
          BaseIntermediateOutputPath, which silently un-excludes ./obj, and a
          stale AssemblyInfo.cs in there fails the build with CS0579. -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);HelloLib/**;obj/**;bin/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);HelloLib/**;HardeningCheck/**;obj/**;bin/**</DefaultItemExcludes>
     <!-- net8.0 is the package's supported floor. The armv7 targets publish as
          net9.0 instead: their ILCompiler runtime packs only ship for .NET 9+,
          and net8.0 fails restore for those RIDs outright (NETSDK1203) - which

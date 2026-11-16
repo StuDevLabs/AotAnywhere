@@ -42,9 +42,17 @@ Things to know:
   image), which fails the link with a clear error. Set
   `AotAnywhereWindowsLinkOptimize=false` to skip the pass and link without
   `/OPT` (roughly 15% larger output).
-- Some MSVC hardening/link features are still not carried over: Control Flow
-  Guard and CET shadow-stack markers (`/CETCOMPAT`) are not emitted. For
-  maximum-hardening release builds, link on Windows with MSVC.
+- Control Flow Guard (`<ControlFlowGuard>Guard</ControlFlowGuard>`, i.e.
+  `/guard:cf`), EH continuation metadata (`/guard:ehcont`) and CET
+  shadow-stack compatibility (`/CETCOMPAT`, on by default for x64 on .NET 10)
+  are honored in the same second lld-link pass as `/OPT`. The glue supplies
+  the load config directory (`_load_config_used`, normally MSVC's
+  `loadcfg.obj`) that carries the CFG tables and `/GS` cookie to the loader;
+  every Windows cross-link now has one, as an MSVC link does. The
+  `windows-hardening.yml` workflow checks on real Windows that the loader
+  enables CFG and that it stops an invalid indirect call. Setting
+  `AotAnywhereWindowsLinkOptimize=false` skips the second pass, and with it
+  these flags.
 - On a Windows host the package does nothing for `win-*` RIDs; the SDK's native
   MSVC link (including cross-arch win-x64 ↔ win-arm64 with the right VS
   components) applies.

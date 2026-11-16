@@ -48,7 +48,7 @@ automatically — the notes say where.
       until zig 0.17.
 
 - [ ] **The Windows /OPT re-link still works.** The Windows link's second pass
-      (`AotAnywhereWindowsLink.RelinkWithOptFlags`) leans on three undocumented
+      (`AotAnywhereWindowsLink.RelinkWithCoffFlags`) leans on three undocumented
       zig behaviours: `zig cc -v` printing the `lld-link ...` argv line, the
       `zig lld-link` subcommand re-execing the bundled LLD COFF driver, and zig
       echoing the paths it was given verbatim (the spaced-path symlink aliasing

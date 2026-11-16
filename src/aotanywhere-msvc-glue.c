@@ -94,6 +94,48 @@ __attribute__((naked)) void __guard_dispatch_icall_dummy(void)
 }
 #endif
 
+/* The load config directory (normally MSVC's loadcfg.obj; the MinGW CRT has
+   none). lld-link points the PE's load config data directory at
+   _load_config_used and fills the __guard_* symbols it references, so this
+   is what carries the /guard:cf tables to the loader - without it a
+   /guard:cf link produces an image the loader never enables CFG for. It also
+   hands the loader __security_cookie, as MSVC's does. Same
+   IMAGE_LOAD_CONFIG_DIRECTORY64 layout on x64 and arm64; written in assembly
+   because __guard_flags/__guard_*_count are absolute symbols whose
+   addresses are the values, which C cannot express for the 32-bit
+   GuardFlags field. Unlisted fields are zero. Only x64 dispatches indirect
+   calls through __guard_dispatch_icall_fptr; arm64 CFG uses the check
+   pointer alone (mingw defines the dispatch pointer for x64 only). */
+#if defined(__x86_64__)
+#define AA_GUARD_DISPATCH_FPTR "  .quad __guard_dispatch_icall_fptr\n"
+#else
+#define AA_GUARD_DISPATCH_FPTR "  .quad 0\n"
+#endif
+__asm__(
+    "  .section .rdata,\"dr\"\n"
+    "  .p2align 3\n"
+    "  .globl _load_config_used\n"
+    "_load_config_used:\n"
+    "  .long 0x140\n"                          /* 0x000 Size */
+    "  .zero 0x54\n"                           /* 0x004 .. 0x057 */
+    "  .quad __security_cookie\n"              /* 0x058 SecurityCookie */
+    "  .zero 0x10\n"                           /* 0x060 SEHandlerTable/Count (x86 only) */
+    "  .quad __guard_check_icall_fptr\n"       /* 0x070 GuardCFCheckFunctionPointer */
+    AA_GUARD_DISPATCH_FPTR                     /* 0x078 GuardCFDispatchFunctionPointer */
+    "  .quad __guard_fids_table\n"             /* 0x080 GuardCFFunctionTable */
+    "  .quad __guard_fids_count\n"             /* 0x088 GuardCFFunctionCount */
+    "  .long __guard_flags\n"                  /* 0x090 GuardFlags */
+    "  .zero 0xC\n"                            /* 0x094 CodeIntegrity */
+    "  .quad __guard_iat_table\n"              /* 0x0A0 GuardAddressTakenIatEntryTable */
+    "  .quad __guard_iat_count\n"              /* 0x0A8 GuardAddressTakenIatEntryCount */
+    "  .quad __guard_longjmp_table\n"          /* 0x0B0 GuardLongJumpTargetTable */
+    "  .quad __guard_longjmp_count\n"          /* 0x0B8 GuardLongJumpTargetCount */
+    "  .zero 0x48\n"                           /* 0x0C0 .. 0x107 */
+    "  .quad __guard_eh_cont_table\n"          /* 0x108 GuardEHContinuationTable */
+    "  .quad __guard_eh_cont_count\n"          /* 0x110 GuardEHContinuationCount */
+    "  .zero 0x28\n"                           /* 0x118 .. 0x13F */
+    "  .text\n");
+
 #if defined(__aarch64__)
 /* MSVC arm64 emits out-of-line calls for these Interlocked helpers (x64
    always inlines them). They interoperate with inlined ldaxp/stlxp

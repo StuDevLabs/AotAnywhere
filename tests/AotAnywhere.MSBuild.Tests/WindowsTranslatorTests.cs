@@ -90,6 +90,9 @@ public class WindowsTranslatorTests
         // lld-link pass the task runs.
         await Assert.That(t.OptRef).IsTrue();
         await Assert.That(t.OptIcf).IsTrue();
+        // Same for /CETCOMPAT.
+        await Assert.That(t.CetCompat).IsTrue();
+        await Assert.That(t.GuardCf).IsFalse();
 
         await Assert.That(Lines(t.Merges.Select(m => $"{m.From}={m.To}")))
             .IsEqualTo(".managedcode=.text\nhydrated=.bss");
@@ -135,6 +138,40 @@ public class WindowsTranslatorTests
         t = MsvcArgTranslator.Translate(new[] { "/OPT:REF", "/OPT:ICF", "/OPT:NOICF,NOREF" });
         await Assert.That(t.OptRef).IsFalse();
         await Assert.That(t.OptIcf).IsFalse();
+    }
+
+    [Test]
+    public async Task GuardAndCetCompatParseAndEmitNoArgs()
+    {
+        // What the net10 ILC targets pass for x64 with ControlFlowGuard=Guard.
+        var t = MsvcArgTranslator.Translate(new[] { "/guard:cf", "/CETCOMPAT", "/guard:ehcont" });
+        await Assert.That(t.GuardCf).IsTrue();
+        await Assert.That(t.GuardEhCont).IsTrue();
+        await Assert.That(t.CetCompat).IsTrue();
+        await Assert.That(t.Args.Count).IsEqualTo(0);
+        await Assert.That(t.Warnings.Count).IsEqualTo(0);
+
+        // Comma lists, last mention wins; NO clears both guards; LONGJMP is
+        // accepted and left to lld-link's default.
+        t = MsvcArgTranslator.Translate(new[] { "/GUARD:CF,EHCONT,LONGJMP", "/GUARD:NO", "/CETCOMPAT:NO" });
+        await Assert.That(t.GuardCf).IsFalse();
+        await Assert.That(t.GuardEhCont).IsFalse();
+        await Assert.That(t.CetCompat).IsFalse();
+        await Assert.That(t.Warnings.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RelinkFlagsCarryOptGuardAndCetCompat()
+    {
+        var t = MsvcArgTranslator.Translate(new[] { "/OPT:REF,ICF", "/guard:cf", "/guard:ehcont", "/CETCOMPAT" });
+        await Assert.That(Lines(AotAnywhereWindowsLink.RelinkFlags(t))).IsEqualTo(Lines(new[]
+        {
+            "-OPT:REF", "-OPT:ICF", "-guard:cf", "-guard:ehcont", "-cetcompat",
+        }));
+
+        // Nothing requested, no second pass.
+        t = MsvcArgTranslator.Translate(new[] { "/NOLOGO" });
+        await Assert.That(AotAnywhereWindowsLink.RelinkFlags(t).Count).IsEqualTo(0);
     }
 
     [Test]
