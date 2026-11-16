@@ -18,14 +18,14 @@ A full-matrix run (`workflow_dispatch` with `full_matrix=true`) adds:
 ### Target Platforms
 - `linux-x64`
 - `linux-arm64`
-- `linux-arm` (armv7, published as `net9.0` — ILCompiler packs for armv7 only ship for .NET 9+)
+- `linux-arm` (armv7)
 - `linux-musl-x64`
 - `linux-musl-arm64`
-- `linux-musl-arm` (armv7, published as `net9.0`)
+- `linux-musl-arm` (armv7)
 - `osx-x64`
 - `osx-arm64`
 - `win-x64`
-- `win-arm64`
+- `win-arm64` (published as `net11.0`, the newest Windows link shape; everything else is `net10.0`)
 
 ## Workflow Structure
 
@@ -55,7 +55,7 @@ runtime's own externals exported, no managed method symbols).
 
 ### 2. Build Process
 For each host-target combination:
-- Sets up .NET 8.0
+- Sets up the .NET 10 and 11 SDKs
 - Installs Zig for cross-compilation
 - Builds the NuGet package
 - Compiles the test application for each target platform

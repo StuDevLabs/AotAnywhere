@@ -42,7 +42,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       # Version comes from the dispatch input, or from the tag name on the
       # fallback tag-push path. tag is always v<version>.

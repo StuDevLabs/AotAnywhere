@@ -4,11 +4,10 @@
   <PropertyGroup>
     <!-- Shared-library coverage for the link flows: NativeLib=Shared takes
          different SDK linker arguments than an executable (-shared, the
-         net8 -Wl,-e0x0 null entry point, the exports version-script, the
-         post-link chmod 644). net8.0 keeps it on the package's supported
-         floor, which is also the spelling-sensitive case for the entry
-         point argument. -->
-    <TargetFramework>net8.0</TargetFramework>
+         -Wl,-e,0x0 null entry point, the exports version-script, the
+         post-link chmod 644). net10.0 keeps it on the package's supported
+         floor. -->
+    <TargetFramework>net10.0</TargetFramework>
     <PublishAot>true</PublishAot>
     <NativeLib>Shared</NativeLib>
     <!-- CI relocates BaseIntermediateOutputPath, which silently un-excludes

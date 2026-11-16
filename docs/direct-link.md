@@ -76,7 +76,7 @@ Windows targets go through the `AotAnywhereWindowsLink` task instead (see
 
 ## What was validated
 
-Linux (glibc and musl, x64/arm64/armv7, net8/net9/net10) and macOS
+Linux (glibc and musl, x64/arm64/armv7, net10) and macOS
 (x64/arm64) publishes link this way in the CI matrix from every host, and the
 `validate` job executes the resulting binaries. The Linux strip was proven
 **byte-identical** to the retired `objcopy_shim.zig` on a real binary (stripped

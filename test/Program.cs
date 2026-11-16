@@ -34,10 +34,8 @@ return 0;
 // Exercises the native interop surfaces beyond Hello World: real ICU
 // (non-invariant globalization), zlib via System.IO.Compression, and
 // OpenSSL via RSA sign/verify. Compiled only for the selftest publishes
-// (AotAnywhereSelfTest=true -> net10.0): referencing GZipStream pulls
-// System.IO.Compression.Native into the link, and on net8 both link
-// flows drop -lz (no bundled zlib), so the default matrix binaries must
-// not reference it.
+// (AotAnywhereSelfTest=true), which run without InvariantGlobalization so
+// the real ICU path is exercised.
 static class SelfTest
 {
     public static int Run()
@@ -59,7 +57,7 @@ static class SelfTest
         var payload = System.Text.Encoding.UTF8.GetBytes(
             string.Concat(System.Linq.Enumerable.Repeat("AotAnywhere selftest ", 500)));
 
-        // zlib (bundled zlib-ng on net9+) via System.IO.Compression.Native.
+        // zlib (the runtime's bundled zlib-ng) via System.IO.Compression.Native.
         using var compressed = new System.IO.MemoryStream();
         using (var gz = new System.IO.Compression.GZipStream(
             compressed, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))

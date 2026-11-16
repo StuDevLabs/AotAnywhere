@@ -148,7 +148,7 @@ jobs:
       - name: Publish Hello for osx-arm64
         # Restore explicitly before publishing: publish's implicit restore
         # ignores the -p:TargetFramework override and restores the csproj's
-        # default TFM (net8.0), so the net11.0 build then fails NETSDK1005
+        # default TFM (net10.0), so the net11.0 build then fails NETSDK1005
         # ("assets file doesn't have a target for net11.0"). An explicit restore
         # honours the override; --no-restore keeps publish from redoing it.
         run: |

@@ -17,8 +17,7 @@ Mac are used.
 
 Things to know:
 
-- The stub symbol lists are generated from the .NET 8, 9, 10, and 11-preview
-  runtime packs (`eng/generate-apple-sysroot.cs`). If a future .NET version
+- The stub symbol lists are generated from the .NET 10 and 11 runtime packs (`eng/generate-apple-sysroot.cs`). If a future .NET version
   references new Apple symbols, the link fails with an unresolved symbol until
   the stubs are regenerated.
 - Symbols are stripped by default (`StripSymbols` defaults to `true`, as on

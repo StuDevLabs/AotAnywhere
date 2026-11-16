@@ -58,9 +58,9 @@ static partial class Generator
     // reference fewer symbols).
     static readonly (string Family, string[] Versions)[] PackVersions =
     [
-        // net8/net9: static libs live in runtime.<rid>.microsoft.dotnet.ilcompiler
-        ("ilcompiler", ["8.0.34", "9.0.23"]),
         // net10+: static libs live in microsoft.netcore.app.runtime.nativeaot.<rid>
+        // (net8/net9 used the "ilcompiler" family, runtime.<rid>.microsoft.dotnet.ilcompiler;
+        // both are out of support and no longer seed the stubs).
         ("nativeaot", ["10.0.15", "11.0.0"])
     ];
 
