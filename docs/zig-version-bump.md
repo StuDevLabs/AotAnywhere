@@ -59,6 +59,18 @@ automatically — the notes say where.
       *Automated:* any Windows-target job in the validation matrix goes red on
       that error.
 
+- [ ] **zig still adds 4 to x86_64 FDE LSDA pointers.** zig's Mach-O linker
+      adds 4 to every 32-bit (`pcrel|sdata4`) FDE LSDA pointer it writes for
+      x86_64 (`src/link/MachO/eh_frame.zig`, the `addend` in the FDE writer),
+      which ILC's unwind info uses for every managed method.
+      `AotAnywherePatchAppleBinary` (`MachoEhFrameLsdaFixer`) subtracts it
+      again after the link. If the new zig drops that `+4`, delete the fixup;
+      otherwise every osx-x64 LSDA pointer ends up 4 bytes short. Either way
+      the symptom is the same: osx-x64 binaries die with SIGBUS (exit 138) on
+      their first managed exception.
+      *Automated:* the `validate` job runs the osx-x64 `Hello`, which throws
+      and catches on startup.
+
 ## Automation
 
 - **Renovate** (`renovate.json`) watches `Vezel.Zig.Toolsets.*` on nuget.org and
