@@ -7,9 +7,17 @@ name: macOS Exports
 # GitHub-hosted runners only.
 
 on:
-  push:
-    branches: [ macos-demote-runtime-exports ]
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - '.github/workflows/macos-exports.yml'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -18,25 +26,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
+          dotnet-version: '10.0.x'
       - name: Build task assembly
         run: dotnet build src/tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj -c Release
       - name: Cross-link macOS targets
-        # _XcodeVersion: the net8 ILCompiler (8.0.31+) compares it numerically,
-        # and it is empty on a non-Mac host - a separate pre-existing issue.
         run: |
           set -euo pipefail
           for rid in osx-arm64 osx-x64; do
-            dotnet publish test/Hello.csproj -r "$rid" -c Release -p:_XcodeVersion=16 -p:InvariantGlobalization=true \
+            dotnet publish test/Hello.csproj -r "$rid" -c Release -p:InvariantGlobalization=true \
               -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/hello-$rid/" -o "out/$rid/hello"
             dotnet publish test/Hello.csproj -r "$rid" -c Release -p:AotAnywhereSelfTest=true \
               -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/selftest-$rid/" -o "out/$rid/selftest"
-            dotnet publish test/HelloLib/HelloLib.csproj -r "$rid" -c Release -p:_XcodeVersion=16 \
+            dotnet publish test/HelloLib/HelloLib.csproj -r "$rid" -c Release \
               -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/lib-$rid/" -o "out/$rid/lib"
           done
       - name: Baseline from unmodified upstream
@@ -48,14 +52,14 @@ jobs:
           git worktree add "$RUNNER_TEMP/upstream" FETCH_HEAD
           dotnet build "$RUNNER_TEMP/upstream/src/tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj" -c Release
           for rid in osx-arm64 osx-x64; do
-            dotnet publish "$RUNNER_TEMP/upstream/test/Hello.csproj" -r "$rid" -c Release -p:_XcodeVersion=16 -p:InvariantGlobalization=true \
+            dotnet publish "$RUNNER_TEMP/upstream/test/Hello.csproj" -r "$rid" -c Release -p:InvariantGlobalization=true \
               -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/upstream-hello-$rid/" -o "out/$rid/upstream-hello"
             dotnet publish "$RUNNER_TEMP/upstream/test/Hello.csproj" -r "$rid" -c Release -p:AotAnywhereSelfTest=true \
               -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/upstream-selftest-$rid/" -o "out/$rid/upstream-selftest"
-            dotnet publish "$RUNNER_TEMP/upstream/test/HelloLib/HelloLib.csproj" -r "$rid" -c Release -p:_XcodeVersion=16 \
+            dotnet publish "$RUNNER_TEMP/upstream/test/HelloLib/HelloLib.csproj" -r "$rid" -c Release \
               -p:BaseIntermediateOutputPath="$RUNNER_TEMP/obj/upstream-lib-$rid/" -o "out/$rid/upstream-lib"
           done
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-binaries
           path: out/
@@ -73,7 +77,7 @@ jobs:
             runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: macos-binaries
           path: out
