@@ -24,6 +24,7 @@ concurrency:
 jobs:
   zig_version_sync:
     runs-on: depot-ubuntu-latest
+    timeout-minutes: 10
     name: ZigVersion drift guard
     steps:
       - name: Checkout repo
@@ -38,8 +39,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - vm: depot-windows-latest
+          - vm: windows-latest
     runs-on: ${{ matrix.vm }}
+    timeout-minutes: 20
     name: Build and test ${{ matrix.vm }}
     steps:
       - name: Checkout repo
@@ -94,6 +96,7 @@ jobs:
   validate:
     needs: build_and_test
     runs-on: depot-ubuntu-latest
+    timeout-minutes: 15
     name: Try launching
     steps:
       - name: Download all artifacts
