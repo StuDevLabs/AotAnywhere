@@ -9,18 +9,18 @@ namespace AotAnywhere.MSBuild.Tests;
 // synthetic MH_OBJECT images with a hand-built LC_SYMTAB.
 public class MachoExportsDemoterTests
 {
-    const byte NExt = 0x01;
-    const byte NPext = 0x10;
-    const byte NSect = 0x0e;
+    internal const byte NExt = 0x01;
+    internal const byte NPext = 0x10;
+    internal const byte NSect = 0x0e;
     const byte NUndf = 0x00;
     const byte NAbs = 0x02;
     const byte NFun = 0x24;   // a stab (N_STAB bits set)
 
-    record Sym(string Name, byte Type);
+    internal record Sym(string Name, byte Type);
 
     // MH_OBJECT with a single LC_SYMTAB; symbols and the string table follow
     // the load commands.
-    static byte[] BuildObject(params Sym[] syms)
+    internal static byte[] BuildObject(params Sym[] syms)
     {
         var strtab = new List<byte> { 0 }; // index 0 is the empty name
         var strx = new uint[syms.Length];
