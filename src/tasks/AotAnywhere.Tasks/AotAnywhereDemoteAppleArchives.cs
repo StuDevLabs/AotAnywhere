@@ -81,8 +81,9 @@ public sealed class AotAnywhereDemoteAppleArchives : MSBuildTask
             if (path.Length == 0 || !Path.IsPathRooted(path) ||
                 !redirects.TryGetValue(SafeFullPath(path), out var copy))
                 return arg;
-            var quoted = spec.Length != path.Length;
-            return (ITaskItem)new TaskItem(quoted ? $"\"{copy}\"" : copy);
+            // Quote the copy regardless of how the original was written: the
+            // args are joined into one command line and OutputDir may hold spaces.
+            return (ITaskItem)new TaskItem($"\"{copy}\"");
         }).ToArray();
         return !Log.HasLoggedErrors;
     }

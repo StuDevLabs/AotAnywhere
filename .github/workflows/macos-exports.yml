@@ -46,9 +46,13 @@ jobs:
       - name: Baseline from unmodified upstream
         # Upstream CI never runs osx-x64 binaries; this tells a pre-existing
         # failure apart from one this branch introduces.
+        env:
+          BASELINE_REF: ${{ github.event.pull_request.base.sha || 'master' }}
         run: |
           set -euo pipefail
-          git fetch --no-tags https://github.com/StuDevLabs/AotAnywhere.git master
+          # A PR compares against its own base commit so a moving master
+          # cannot add or hide a regression; manual runs use current master.
+          git fetch --no-tags https://github.com/StuDevLabs/AotAnywhere.git "$BASELINE_REF"
           git worktree add "$RUNNER_TEMP/upstream" FETCH_HEAD
           dotnet build "$RUNNER_TEMP/upstream/src/tasks/AotAnywhere.Tasks/AotAnywhere.Tasks.csproj" -c Release
           for rid in osx-arm64 osx-x64; do
