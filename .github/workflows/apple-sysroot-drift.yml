@@ -25,7 +25,8 @@ jobs:
   # Regenerate the stubs from the newest packs and open a PR on drift. Must run
   # on macOS: the generator drives xcrun/nm and the local SDK's .tbd files.
   drift:
-    runs-on: depot-macos-latest
+    runs-on: macos-latest
+    timeout-minutes: 20
     name: Regenerate stubs and check for drift
     steps:
       - name: Checkout repo
@@ -116,6 +117,9 @@ jobs:
   # scenario, and the only configuration where a stub gap turns the run red.
   canary:
     runs-on: depot-ubuntu-latest
+    # A normal run takes ~1 min. Without a cap, a hung `Setup Zig` download
+    # once held this runner for GitHub's 6-hour default (360 Depot minutes).
+    timeout-minutes: 20
     name: Canary publish (osx-arm64, newest SDK)
     steps:
       - name: Checkout repo

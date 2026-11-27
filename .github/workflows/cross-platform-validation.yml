@@ -54,6 +54,7 @@ jobs:
   # (the test app is a Microsoft.Testing.Platform executable).
   msbuild-logic-tests:
     runs-on: depot-ubuntu-latest
+    timeout-minutes: 15
     name: MSBuild logic unit tests
     steps:
       - name: Checkout repo
@@ -76,6 +77,7 @@ jobs:
   # under test is host-independent.
   package-consumption:
     runs-on: depot-ubuntu-latest
+    timeout-minutes: 15
     name: Package consumption (clean NuGet cache)
     steps:
       - name: Checkout repo
@@ -93,6 +95,7 @@ jobs:
   # file with -legacy — the PFX encryption rcodesign can read back.
   test-cert:
     runs-on: depot-ubuntu-latest
+    timeout-minutes: 10
     name: Generate test signing certificate
     steps:
       - name: Generate self-signed signing certificate
@@ -129,8 +132,17 @@ jobs:
   # with full_matrix=true (e.g. a pre-release sweep). Either way every host still builds all ten
   # targets and every target is still validated natively - only the set of
   # build *hosts* narrows.
+  #
+  # Runner choice: this repo is public, so GitHub-hosted runners cost nothing,
+  # while Depot bills Windows at 2x and macOS at 20x its Linux minute. Linux
+  # stays on Depot (1x, and it roughly halves the linux build: ~3.4 vs ~6.1
+  # min). Windows and macOS use GitHub-hosted: Depot Windows was no faster
+  # (~9.2 vs ~9.9 min), and Depot macOS, though faster (~2.6 vs ~9.7 min),
+  # finished well before the windows build that already sets the matrix's wall
+  # time, while costing ~half of this repo's Depot minutes.
   setup:
     runs-on: depot-ubuntu-latest
+    timeout-minutes: 5
     name: Select host matrix
     outputs:
       build-matrix: ${{ steps.select.outputs.build-matrix }}
@@ -144,11 +156,11 @@ jobs:
         run: |
           if [ "$FULL_MATRIX" = "true" ]; then
             echo "Selected full host matrix (all six hosts)."
-            echo 'build-matrix={"include":[{"host":"depot-windows-latest","host-name":"windows"},{"host":"depot-ubuntu-latest","host-name":"linux"},{"host":"macos-15-intel","host-name":"macos-x64"},{"host":"depot-macos-latest","host-name":"macos-arm64"},{"host":"depot-ubuntu-24.04-arm","host-name":"linux-arm64"},{"host":"windows-11-arm","host-name":"windows-arm64"}]}' >> "$GITHUB_OUTPUT"
+            echo 'build-matrix={"include":[{"host":"windows-latest","host-name":"windows"},{"host":"depot-ubuntu-latest","host-name":"linux"},{"host":"macos-15-intel","host-name":"macos-x64"},{"host":"macos-latest","host-name":"macos-arm64"},{"host":"depot-ubuntu-24.04-arm","host-name":"linux-arm64"},{"host":"windows-11-arm","host-name":"windows-arm64"}]}' >> "$GITHUB_OUTPUT"
             echo 'host-sources=windows,linux,macos-x64,macos-arm64,linux-arm64,windows-arm64' >> "$GITHUB_OUTPUT"
           else
             echo "Selected minimal host matrix (windows, linux, macos-arm64)."
-            echo 'build-matrix={"include":[{"host":"depot-windows-latest","host-name":"windows"},{"host":"depot-ubuntu-latest","host-name":"linux"},{"host":"depot-macos-latest","host-name":"macos-arm64"}]}' >> "$GITHUB_OUTPUT"
+            echo 'build-matrix={"include":[{"host":"windows-latest","host-name":"windows"},{"host":"depot-ubuntu-latest","host-name":"linux"},{"host":"macos-latest","host-name":"macos-arm64"}]}' >> "$GITHUB_OUTPUT"
             echo 'host-sources=windows,linux,macos-arm64' >> "$GITHUB_OUTPUT"
           fi
 
@@ -162,6 +174,7 @@ jobs:
       matrix: ${{ fromJSON(needs.setup.outputs.build-matrix) }}
 
     runs-on: ${{ matrix.host }}
+    timeout-minutes: 30
     name: Build from ${{ matrix.host-name }}
 
     steps:
@@ -312,14 +325,14 @@ jobs:
             test-targets: "osx-x64"
           # Test macOS binaries on macOS ARM64. lib-osx-arm64 covers the
           # shared library (loaded via ctypes) and its export surface.
-          - runner: depot-macos-latest
+          - runner: macos-latest
             runner-name: macos-arm64
             test-targets: "osx-arm64,lib-osx-arm64"
           # Test Windows x64 binaries on Windows x64. The windows-host builds
           # are MSVC-linked (package inert there); the others are zig-linked
           # by the shim's link personality, so this is where the MinGW-glued
           # binaries prove they actually run.
-          - runner: depot-windows-latest
+          - runner: windows-latest
             runner-name: windows-x64
             test-targets: "win-x64"
           # Test Windows ARM64 binaries on the hosted arm64 Windows runner.
@@ -327,6 +340,7 @@ jobs:
             runner-name: windows-arm64
             test-targets: "win-arm64"
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     name: Validate on ${{ matrix.runner-name }}
     
     steps:
@@ -601,6 +615,7 @@ jobs:
     needs: [build, validate, setup]
     if: always()
     runs-on: depot-ubuntu-latest
+    timeout-minutes: 10
     name: Platform Support Report
 
     steps:
